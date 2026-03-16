@@ -1,0 +1,193 @@
+---
+title: 'Resources'
+description: 'Upload, list, and delete learning resources for coders.'
+---
+
+TLs can upload PDF study materials that are stored in Supabase Storage and made available to all coders in their clan. When a resource is uploaded, all active coders in the clan receive a real-time notification.
+
+---
+
+## Upload a resource
+
+```
+POST /api/tl/resource/upload
+```
+
+Uploads a PDF file to Supabase Storage and creates a record in the `resources` table. The file is stored under a clan- and module-scoped path in the `activity-resources` bucket.
+
+<Warning>
+  Only PDF files are accepted. The maximum file size is **20 MB**. Requests with other MIME types are rejected at the multer middleware level before reaching the controller.
+</Warning>
+
+### Request
+
+Content-Type: `multipart/form-data`
+
+<ParamField body="file" type="file" required>
+  The PDF file to upload. Must have MIME type `application/pdf` and be no larger than 20 MB.
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Human-readable title for the resource (e.g. `"Optimización de consultas SQL"`).
+</ParamField>
+
+<ParamField body="moduleId" type="integer">
+  Module ID to associate the resource with. Defaults to `0` if omitted, which places the file in a module-independent folder.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">Confirmation string.</ResponseField>
+<ResponseField name="resourceId" type="integer | null">The new resource's database ID. `null` if the database insert failed (the file was still uploaded to storage).</ResponseField>
+<ResponseField name="storagePath" type="string">The file's path within the `activity-resources` Supabase Storage bucket.</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | No file received, file is not a PDF, file exceeds 20 MB, `title` is missing, or the TL has no clan assigned. |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `500`  | Supabase Storage upload failed. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/tl/resource/upload \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --form 'file=@/path/to/sql-optimization.pdf' \
+  --form 'title=Optimización de consultas SQL' \
+  --form 'moduleId=4'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "message": "PDF subido correctamente.",
+  "resourceId": 7,
+  "storagePath": "Turing/module-4/1709123456789_sql-optimization.pdf"
+}
+```
+
+---
+
+## List resources
+
+```
+GET /api/tl/resource/list
+```
+
+Returns all active resources uploaded by the TL's clan.
+
+### Query parameters
+
+<ParamField query="moduleId" type="integer">
+  Filter results to a specific module.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="resources" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Resource database ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="file_name" type="string">Original PDF filename.</ResponseField>
+    <ResponseField name="preview_text" type="string | null">Extracted text preview.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">ISO 8601 upload timestamp.</ResponseField>
+    <ResponseField name="module_id" type="integer | null">Associated module ID.</ResponseField>
+    <ResponseField name="clan" type="string">Clan that owns this resource.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `500`  | Failed to list resources. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'http://localhost:3000/api/tl/resource/list?moduleId=4' \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "resources": [
+    {
+      "id": 7,
+      "title": "Optimización de consultas SQL",
+      "file_name": "sql-optimization.pdf",
+      "preview_text": "Los índices en PostgreSQL permiten...",
+      "uploaded_at": "2026-03-05T08:00:00.000Z",
+      "module_id": 4,
+      "clan": "Turing"
+    }
+  ]
+}
+```
+
+---
+
+## Delete a resource
+
+```
+DELETE /api/tl/resource/:resourceId
+```
+
+Soft-deletes the resource by setting `is_active = false` and removes the file from Supabase Storage. Only the TL who uploaded the resource can delete it.
+
+<Warning>
+  Deletion is permanent — the file is removed from storage and cannot be recovered. Coders will immediately lose access to the download URL.
+</Warning>
+
+### Path parameters
+
+<ParamField path="resourceId" type="integer" required>
+  The resource database ID to delete.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `404`  | Resource not found, already deleted, or uploaded by a different TL. |
+| `500`  | Failed to delete the resource. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request DELETE \
+  --url http://localhost:3000/api/tl/resource/7 \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true
+}
+```

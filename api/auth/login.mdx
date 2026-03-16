@@ -1,0 +1,200 @@
+---
+title: 'Login'
+description: 'Authenticate with email and password to create a session.'
+---
+
+Authenticates a user with their email and password. On success, an `express-session` cookie (`riwi.sid`) is set and the user object is returned. All subsequent requests to protected routes must include this cookie.
+
+<Note>
+  OAuth users (Google, GitHub) cannot log in via this endpoint — their accounts use a different credential flow. They will receive a `401` if they attempt password login.
+</Note>
+
+## Login
+
+<ParamField body="email" type="string" required>
+  The user's registered email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's plain-text password.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on successful authentication.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Unique user identifier.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      User's email address.
+    </ResponseField>
+    <ResponseField name="full_name" type="string">
+      User's display name.
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      Account role: `coder` or `tl`.
+    </ResponseField>
+    <ResponseField name="clan_id" type="string">
+      The clan the user belongs to. `null` if not assigned.
+    </ResponseField>
+    <ResponseField name="first_login" type="boolean">
+      `true` if the user has not yet completed onboarding. Coders with `first_login: true` will be redirected to the onboarding flow.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | Invalid email/password combination, or the account was created via OAuth. |
+| `403`  | Email address has not been OTP-verified. A new OTP is automatically re-sent. |
+| `500`  | Server error during login. |
+
+<Warning>
+  A `403` response includes `requiresOtp: true` and the `email` field. Redirect the user to the OTP verification screen.
+</Warning>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/auth/login \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "email": "alex@example.com",
+    "password": "s3cur3P@ss!"
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "user": {
+    "id": "usr_abc123",
+    "email": "alex@example.com",
+    "full_name": "Alex Rivera",
+    "role": "coder",
+    "clan_id": "clan_42",
+    "first_login": false
+  }
+}
+```
+
+```json 403
+{
+  "requiresOtp": true,
+  "error": "Please verify your email first.",
+  "email": "alex@example.com"
+}
+```
+
+---
+
+## Check session
+
+Returns the currently authenticated user based on the active session. Accepts both `req.user` (Passport) and `req.session.userId`.
+
+```
+GET /api/auth/check
+```
+
+No request body or parameters required.
+
+### Response — 200 OK
+
+<ResponseField name="authenticated" type="boolean">
+  `true` when a valid session is found.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">Unique user identifier.</ResponseField>
+    <ResponseField name="email" type="string">User's email address.</ResponseField>
+    <ResponseField name="full_name" type="string">User's display name.</ResponseField>
+    <ResponseField name="role" type="string">Account role.</ResponseField>
+    <ResponseField name="clan_id" type="string">Assigned clan, or `null`.</ResponseField>
+    <ResponseField name="first_login" type="boolean">Onboarding completion status.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+Returns `401` with `{ "authenticated": false }` when no session is active.
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:3000/api/auth/check \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+<Note>
+  `GET /api/auth/me` is an alias for this endpoint. It requires the `isAuthenticated` middleware, so it will return `401` if no session exists instead of `{ authenticated: false }`.
+</Note>
+
+---
+
+## Logout
+
+Destroys the current session and clears the session cookie. Requires an active session.
+
+```
+POST /api/auth/logout
+```
+
+Requires: active session (`isAuthenticated` middleware).
+
+### Response — 200 OK
+
+```json
+{ "message": "Session closed." }
+```
+
+---
+
+## Update profile
+
+Updates mutable profile fields for the currently authenticated user.
+
+```
+PATCH /api/auth/profile
+```
+
+Requires: active session (`isAuthenticated` middleware).
+
+<ParamField body="full_name" type="string">
+  New display name. At least one of `full_name` or `clan_id` must be provided.
+</ParamField>
+
+<ParamField body="clan_id" type="string">
+  New clan assignment. At least one of `full_name` or `clan_id` must be provided.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">User ID.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="full_name" type="string">Updated display name.</ResponseField>
+    <ResponseField name="role" type="string">Account role.</ResponseField>
+    <ResponseField name="clan_id" type="string">Updated clan assignment.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | Neither `full_name` nor `clan_id` was provided. |
+| `401`  | No active session. |

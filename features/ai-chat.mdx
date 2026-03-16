@@ -1,0 +1,94 @@
+---
+title: "AI chat tutor"
+description: "Ask questions and get personalized answers from Kairo's AI tutor, contextualized to your learning plan."
+---
+
+The AI chat tutor lets you ask coding questions directly from the AI Trainer view and receive concise, practical answers from Kairo. It is powered by the Groq LLM and available any time your session is active.
+
+## How to open the chat
+
+Navigate to **AI Trainer** from the sidebar or bottom navigation bar in the coder interface (`IAtrainer.html`). The AI Trainer page combines your active plan activities with access to the chat tutor in a single view.
+
+## The chat endpoint
+
+All messages are sent directly to the Python AI service:
+
+```bash
+POST /chat/ask
+Content-Type: application/json
+
+{
+  "message": "Can you explain what a LEFT JOIN does?",
+  "coder_id": 42
+}
+```
+
+The `coder_id` field is optional. The endpoint returns a single `reply` field:
+
+```json
+{ "reply": "A LEFT JOIN returns all rows from the left table and matching rows from the right table. If there's no match, the right-side columns return NULL. For example..." }
+```
+
+<Note>
+The chat is **stateless per request**. Each message is processed independently — the AI has no memory of previous messages in the same session. If you need continuity, include relevant context in your message.
+</Note>
+
+## The underlying model
+
+The chat tutor uses the **Groq** inference API with the `llama-3.3-70b-versatile` model (configurable via the `MODEL_NAME` environment variable). Groq is used for low-latency responses — the model is instructed to give a short answer first, then elaborate only if needed, in at most 3 paragraphs.
+
+The system prompt positions Kairo as an expert coding tutor at Riwi bootcamp:
+
+```python
+"You are Kairo, an expert coding tutor at Riwi bootcamp. "
+"You help students with programming questions in a concise, "
+"motivating, and practical way. "
+"Always give a short answer first, then explain if needed. "
+"Use simple language. Max 3 paragraphs."
+```
+
+## Context-aware responses
+
+Although the chat endpoint itself is stateless, your active plan context influences the experience through the AI Trainer view:
+
+- The page displays your active plan alongside the chat interface, so you can reference current day topics in your questions
+- Resource cards from your TL (`POST /search-resources`) are surfaced alongside plan activities, giving you materials to ask about
+- Your `learning_style` (from `soft_skills_assessment`) is available in the session, and can be included in future prompts by the frontend
+
+<Tip>
+For the most useful responses, include your current topic in your message. For example: "I'm working on SQL JOINs in week 2. Can you show me the difference between INNER JOIN and LEFT JOIN with a practical example?"
+</Tip>
+
+## Example interactions
+
+<AccordionGroup>
+  <Accordion title="Debugging a query">
+    **You:** My SQL query returns duplicate rows when I JOIN two tables. What's causing it?
+
+    **Kairo:** Duplicates from a JOIN usually mean there are multiple matching rows on the right-side table. Use `SELECT DISTINCT` to deduplicate, or check if your join condition is too broad. If you're joining `orders` to `users`, make sure you're joining on a unique key like `user_id`, not a non-unique column.
+  </Accordion>
+  <Accordion title="Concept explanation">
+    **You:** What's the difference between `WHERE` and `HAVING` in SQL?
+
+    **Kairo:** `WHERE` filters rows before grouping; `HAVING` filters groups after `GROUP BY`. Use `WHERE` for raw column conditions and `HAVING` for aggregate conditions like `HAVING COUNT(*) > 5`.
+  </Accordion>
+  <Accordion title="Study guidance">
+    **You:** I'm struggling with recursion in Python. Where should I start?
+
+    **Kairo:** Start with the base case — the condition that stops the recursion. Then write the recursive case. A good first exercise is `factorial(n)`: if `n == 0` return 1, otherwise return `n * factorial(n-1)`. Once that clicks, try Fibonacci.
+  </Accordion>
+</AccordionGroup>
+
+## Error handling
+
+If the Groq API is unavailable, the endpoint returns HTTP 500 with:
+
+```json
+{ "detail": "AI tutor temporarily unavailable" }
+```
+
+Empty messages are rejected with HTTP 400:
+
+```json
+{ "detail": "Message cannot be empty" }
+```

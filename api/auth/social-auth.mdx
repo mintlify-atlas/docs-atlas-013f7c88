@@ -1,0 +1,127 @@
+---
+title: 'Social authentication'
+description: 'Authenticate using Google or GitHub OAuth.'
+---
+
+Kairo supports OAuth 2.0 login via Google and GitHub. Both flows use Passport.js strategies and create a server-side session on success. No password is required.
+
+<Note>
+  Social auth users cannot use [POST /api/auth/login](/api/auth/login) — their accounts are flagged as OAuth accounts and password login is blocked.
+</Note>
+
+## Setup
+
+Before using social auth, set the following environment variables on the backend server:
+
+| Variable | Description |
+| -------- | ----------- |
+| `GOOGLE_CLIENT_ID` | OAuth client ID from Google Cloud Console. |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret from Google Cloud Console. |
+| `GITHUB_CLIENT_ID` | OAuth app client ID from GitHub Developer Settings. |
+| `GITHUB_CLIENT_SECRET` | OAuth app client secret from GitHub Developer Settings. |
+| `FRONTEND_URL` | Base URL of the frontend, used for post-auth redirects. |
+| `FRONTEND_VIEWS_PATH` | Path prefix for frontend views. Defaults to `/frontend/src/views`. |
+
+Register the following callback URLs in each provider's developer console:
+
+- **Google**: `http://localhost:3000/api/auth/google/callback`
+- **GitHub**: `http://localhost:3000/api/auth/github/callback`
+
+---
+
+## Google OAuth
+
+### Initiate login
+
+Redirects the browser to Google's OAuth consent screen. The `select_account` prompt is always shown, allowing users to switch accounts.
+
+```
+GET /api/auth/google
+```
+
+No request body or parameters. This endpoint must be visited in a browser — it issues an HTTP redirect.
+
+**OAuth scopes requested:** `profile`, `email`
+
+<CodeGroup>
+
+```bash cURL
+curl --location --max-redirs 0 \
+  http://localhost:3000/api/auth/google
+# Returns: 302 redirect to accounts.google.com
+```
+
+</CodeGroup>
+
+### Callback
+
+Google redirects back to this endpoint after the user grants or denies access. Handled automatically by Passport.js — do not call this endpoint directly.
+
+```
+GET /api/auth/google/callback
+```
+
+| Outcome | Behaviour |
+| ------- | --------- |
+| Success | Session is created; user is redirected to `onboarding.html` (first login) or `dashboard.html`. |
+| Failure | User is redirected to `{FRONTEND_URL}/login.html?error=google_failed`. |
+
+---
+
+## GitHub OAuth
+
+### Initiate login
+
+Redirects the browser to GitHub's OAuth authorization page.
+
+```
+GET /api/auth/github
+```
+
+No request body or parameters. This endpoint must be visited in a browser — it issues an HTTP redirect.
+
+**OAuth scope requested:** `user:email`
+
+<CodeGroup>
+
+```bash cURL
+curl --location --max-redirs 0 \
+  http://localhost:3000/api/auth/github
+# Returns: 302 redirect to github.com/login/oauth/authorize
+```
+
+</CodeGroup>
+
+### Callback
+
+GitHub redirects back to this endpoint after authorization. Handled automatically by Passport.js — do not call this endpoint directly.
+
+```
+GET /api/auth/github/callback
+```
+
+| Outcome | Behaviour |
+| ------- | --------- |
+| Success | Session is created; user is redirected to `onboarding.html` (first login) or `dashboard.html`. |
+| Failure | User is redirected to `{FRONTEND_URL}/login.html?error=github_failed`. |
+
+---
+
+## Post-auth redirect logic
+
+After a successful OAuth callback, the `socialAuthSuccess` handler:
+
+1. Sets `req.session.userId` and saves the session.
+2. Marks the user's `otp_verified` field as `true` in the database (OAuth users skip the OTP flow).
+3. Redirects the user based on `first_login` status:
+
+| `first_login` | Redirect destination |
+| ------------- | -------------------- |
+| `true` | `{FRONTEND_URL}{FRONTEND_VIEWS_PATH}/coder/onboarding.html` |
+| `false` | `{FRONTEND_URL}{FRONTEND_VIEWS_PATH}/coder/dashboard.html` |
+
+If session save fails, the user is redirected to `/login.html?error=session_error`.
+
+<Warning>
+  If `FRONTEND_URL` is not configured, redirects will point to `undefined/...`. Always set this variable in your deployment environment.
+</Warning>

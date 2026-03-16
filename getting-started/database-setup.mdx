@@ -1,0 +1,169 @@
+---
+title: "Database setup"
+description: "Initialize the Kairo PostgreSQL schema on Supabase."
+---
+
+Kairo's database is PostgreSQL 14+ hosted on Supabase. The setup involves running two SQL scripts — `schema.sql` to create all tables and types, and `rls_policies.sql` to apply Row Level Security.
+
+## Prerequisites
+
+- A [Supabase](https://supabase.com) account with a project created
+- The project's connection details (host, port, database name, user, password, and `DATABASE_URL`) — needed for the Node.js `.env`
+- Both the `anon` key and the `service_role` key from **Project Settings → API**
+
+## Run the schema
+
+<Steps>
+
+<Step title="Open the SQL Editor">
+
+In your Supabase dashboard, click **SQL Editor** in the left sidebar.
+
+</Step>
+
+<Step title="Run schema.sql">
+
+Copy the contents of `database/schema.sql` from the repository and paste it into the SQL Editor. Click **Run**.
+
+You can also run it with `psql` if you prefer a terminal:
+
+```bash
+psql -U postgres.your_user -h db.xxxx.supabase.co -d postgres -f database/schema.sql
+```
+
+<Note>
+The schema includes commented-out `DROP` statements at the top. Leave them commented out for a fresh setup. Uncomment them only if you want to completely reset the database.
+</Note>
+
+</Step>
+
+<Step title="Run rls_policies.sql">
+
+Copy the contents of `database/rls_policies.sql` and run it in the same SQL Editor.
+
+```bash
+psql -U postgres.your_user -h db.xxxx.supabase.co -d postgres -f database/rls_policies.sql
+```
+
+This applies Row Level Security to all tables so that coders can only access their own data, while Team Leaders can query all coders in their clan.
+
+</Step>
+
+<Step title="Run migrations (if applicable)">
+
+If you are setting up a version of Kairo that has had schema changes since the initial release, run the migration files in order:
+
+```bash
+psql -U postgres.your_user -h db.xxxx.supabase.co -d postgres \
+  -f database/migrations/001_add_clans_and_priority_and_notifications.sql
+```
+
+Migration files are numbered sequentially in `database/migrations/`. Run them in ascending order.
+
+</Step>
+
+<Step title="(Optional) Load seed data">
+
+Sample data for development and testing is available in `database/seeds/`. Run any seed files you need:
+
+```bash
+psql -U postgres.your_user -h db.xxxx.supabase.co -d postgres -f database/seeds/your_seed_file.sql
+```
+
+</Step>
+
+</Steps>
+
+## Enum types created
+
+`schema.sql` creates the following PostgreSQL enum types before any tables:
+
+| Enum type | Values |
+|---|---|
+| `role_enum` | `coder`, `tl` |
+| `learning_style_enum` | `visual`, `auditory`, `kinesthetic`, `mixed` |
+| `activity_type_enum` | `guided`, `semi_guided`, `autonomous` |
+| `feedback_type_enum` | `weekly`, `activity`, `general` |
+| `risk_level_enum` | `low`, `medium`, `high` |
+| `report_target_enum` | `coder`, `clan`, `cohort` |
+| `ai_agent_enum` | `learning_plan`, `report_generator`, `risk_detector` |
+| `priority_level_enum` | `low`, `medium`, `high` |
+
+## Tables created
+
+`schema.sql` creates 14 tables:
+
+| # | Table | Description |
+|---|---|---|
+| 1 | `users` | All platform users. `role` column differentiates coders (`coder`) from Team Leaders (`tl`). `clan_id` groups coders into clans (Turing, Tesla, McCarthy). |
+| 2 | `soft_skills_assessment` | One row per coder. Stores self-assessed scores (1–5) for autonomy, time management, problem solving, communication, and teamwork, plus `learning_style`. |
+| 3 | `modules` | Bootcamp modules (e.g., Backend, Frontend). Each has a `total_weeks` count. |
+| 4 | `moodle_progress` | Academic progress per coder per module. Tracks current week, completed weeks (JSONB array), struggling topics (text array), and `average_score`. |
+| 5 | `topics` | Individual topics within a module, with an optional `category`. |
+| 6 | `coder_struggling_topics` | Many-to-many join table linking coders to topics they have self-reported as difficult. |
+| 7 | `complementary_plans` | The six AI-generated focus cards per coder. `priority_level` orders them (2 high, 2 medium, 2 low). `plan_content` is a JSONB object from the LLM. |
+| 8 | `plan_activities` | Daily activities within a plan. Each activity has a `day_number`, `activity_type`, estimated time, and `skill_focus`. |
+| 9 | `activity_progress` | Tracks per-coder completion of each activity. Optional `reflection_text` and `time_spent_minutes`. |
+| 10 | `evidence_submissions` | Files and links uploaded by coders as evidence for completed activities. |
+| 11 | `tl_feedback` | Team Leader messages to coders. `is_read = false` triggers the notification bell indicator in the coder UI. |
+| 12 | `risk_flags` | Risk alerts (low/medium/high) for coders. Auto-detected by the risk engine or manually created by TLs. Includes `resolved` tracking. |
+| 13 | `ai_reports` | AI-generated executive reports for Team Leaders. Scoped to a coder, clan, or cohort via `target_type` and `target_id`. |
+| 14 | `ai_generation_log` | Full audit log of every LLM call. Records input/output payloads as JSONB, model name, execution time in milliseconds, and success status. |
+
+## Views created
+
+`schema.sql` creates two views:
+
+**`v_coder_dashboard`**  
+Aggregates a coder's soft skills scores, current module name, Moodle week and average score, total activity count, and activity completion percentage into a single row. Used by the coder dashboard endpoint to avoid multiple round-trip queries.
+
+**`v_coder_risk_analysis`**  
+Joins soft skills, Moodle scores, risk flags, and activity data per coder. Computes a `calculated_risk_level` column using the rule: `high` if autonomy ≤ 2 **and** average score < 70; `medium` if either condition is true; `low` otherwise. Used by the TL analytics dashboard.
+
+## Row Level Security
+
+After running `schema.sql`, you must also run `database/rls_policies.sql` to enable RLS. Without this step, all authenticated Supabase clients can read and write all rows.
+
+The RLS policies enforce:
+
+- **Coders** can only read and update their own rows (matched by `coder_id = auth.uid()`).
+- **Team Leaders** can read all coder data within their scope but cannot modify coder-owned records.
+- The Python AI service uses `SUPABASE_SERVICE_KEY` (service role), which bypasses RLS entirely — this is intentional so the AI service can read all coder data when generating reports.
+
+<Warning>
+Do not skip `rls_policies.sql`. Without RLS, any authenticated user can read every other user's learning data, scores, and feedback.
+</Warning>
+
+## Seed data
+
+The `database/seeds/` directory contains sample data for local development. Seed files are optional — the application runs without them, but they give you pre-populated users, modules, and progress records to work with immediately.
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title='"type already exists" error when running schema.sql'>
+
+The enum types already exist from a previous run. Either drop them manually or uncomment the `DROP TYPE IF EXISTS` statements at the top of `schema.sql` and re-run.
+
+</Accordion>
+
+<Accordion title='"permission denied" on a table'>
+
+Check `rls_policies.sql` for the relevant table. Verify that the Supabase JWT role in your request matches the expected role in the policy. The service role key (used by the Python service) bypasses all policies.
+
+</Accordion>
+
+<Accordion title="The six focus cards do not appear in order">
+
+Verify that `priority_level` is set on each `complementary_plans` row. The frontend orders cards with `ORDER BY priority_level DESC`. The default value is `medium` if not explicitly set by the AI service.
+
+</Accordion>
+
+<Accordion title="Session table is missing">
+
+The `session` table for `connect-pg-simple` is created automatically by Node.js on first startup when `createTableIfMissing: true` is set. If you see session errors, confirm the `DATABASE_URL` in `backend-node/.env` is correct and the database user has `CREATE TABLE` permission.
+
+</Accordion>
+
+</AccordionGroup>

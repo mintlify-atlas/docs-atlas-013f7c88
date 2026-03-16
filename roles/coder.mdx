@@ -1,0 +1,183 @@
+---
+title: "Coder role"
+description: "Everything a bootcamp student needs to know to use Kairo effectively."
+---
+
+Coders are Riwi bootcamp students who use Kairo to learn at their own pace. The platform analyzes your academic performance and soft skills to generate a personalized 4-week growth path, so you always know exactly where to focus.
+
+## Account creation
+
+You can create a Kairo account in two ways:
+
+<CardGroup cols={2}>
+  <Card title="Email + OTP" icon="envelope">
+    Register with your email address. Kairo sends a one-time password (OTP) to verify your email before activating your account.
+  </Card>
+  <Card title="OAuth" icon="key">
+    Sign in with Google or GitHub. Kairo upserts your account automatically after the provider callback — no separate registration step required.
+  </Card>
+</CardGroup>
+
+### Email registration flow
+
+<Steps>
+  <Step title="Submit your details">
+    `POST /api/auth/register` — provide your full name, email, and password.
+  </Step>
+  <Step title="Check your inbox">
+    Kairo sends an OTP to your email address via SMTP.
+  </Step>
+  <Step title="Verify your email">
+    `POST /api/auth/verify-otp` — submit the code from your inbox. Your account is activated immediately.
+  </Step>
+  <Step title="Log in">
+    `POST /api/auth/login` — use your email and password. Kairo creates a session and sets the `riwi.sid` cookie.
+  </Step>
+</Steps>
+
+<Tip>
+  If the OTP expires before you verify, use `POST /api/auth/resend-otp` to request a new one.
+</Tip>
+
+## Clans
+
+Every coder belongs to one of three clans:
+
+| Clan | Description |
+|------|-------------|
+| **Turing** | Named after Alan Turing |
+| **Tesla** | Named after Nikola Tesla |
+| **McCarthy** | Named after John McCarthy |
+
+Your clan is stored in the `clan_id` field of the `users` table and determines which Team Leader monitors your progress. You cannot change your clan yourself — contact your TL or an admin.
+
+## First login: the onboarding assessment
+
+The first time you log in, `first_login` is set to `true` in your account. Kairo intercepts every request to `/api/coder/*` and redirects you to complete the soft skills assessment before you can access the dashboard.
+
+<Warning>
+  You cannot skip the onboarding assessment. All coder routes are protected by the `checkOnboarding` middleware. Until you complete the assessment and `first_login` is set to `false`, every API call returns a `403 Onboarding Required` error with `redirect: "/onboarding"`.
+</Warning>
+
+The assessment is available at the `onboarding.html` view. It records the following scores on a 1–5 scale:
+
+- **Autonomy** — how independently you work
+- **Time management** — how well you plan your schedule
+- **Problem solving** — how you approach obstacles
+- **Communication** — how you express and receive information
+- **Teamwork** — how you collaborate with others
+- **Learning style** — `visual`, `auditory`, `kinesthetic`, or `mixed`
+
+Once you submit the form, Node.js writes your scores to the `soft_skills_assessment` table and calls `PATCH /api/auth/complete-onboarding` to flip `first_login` to `false`. You are then redirected to your dashboard.
+
+<Info>
+  Team Leaders and admins bypass onboarding entirely — the `checkOnboarding` middleware only applies to coders.
+</Info>
+
+## Daily workflow
+
+<Steps>
+  <Step title="Check your dashboard">
+    Open `dashboard.html`. Your personalized focus cards are displayed here — six cards organized by priority (2 high, 2 medium, 2 low). Each card represents a topic where you need reinforcement, derived from your Moodle scores and soft skills assessment.
+  </Step>
+  <Step title="Work through your daily activities">
+    Open `assignment.html` to see today's activities. Activities come in three types:
+
+    | Type | Description |
+    |------|-------------|
+    | `guided` | Step-by-step instructions with minimal decisions |
+    | `semi_guided` | Partial structure — you fill in the gaps |
+    | `autonomous` | Open-ended task with full creative freedom |
+  </Step>
+  <Step title="Mark activities complete">
+    When you finish an activity, call `PATCH /api/coder/activities/:id/complete`. You can include a `reflection_text` and the time you spent. This updates the `activity_progress` table.
+  </Step>
+  <Step title="Submit evidence">
+    Upload a PDF or paste a URL as proof of your work. Evidence is stored in the `evidence_submissions` table and is visible to your TL.
+  </Step>
+  <Step title="Use the AI chat tutor">
+    Open `IAtrainer.html` to chat with the AI tutor. The tutor answers questions in the context of your active learning plan.
+  </Step>
+  <Step title="Check TL feedback">
+    Watch for the notification bell indicator on any view. A red dot means your Team Leader has sent you new feedback (`is_read = false` in the `tl_feedback` table). Open the message and it clears automatically.
+  </Step>
+</Steps>
+
+## Requesting a new plan
+
+If you have completed your current plan or your situation has changed, you can request a fresh AI-generated plan:
+
+```bash
+POST /api/coder/plan/request
+```
+
+Kairo reads your latest `soft_skills_assessment` and `moodle_progress` records, forwards the data to the Python AI service, and saves a new set of six focus cards in `complementary_plans`.
+
+## Generating practice exercises
+
+Request an AI-generated exercise on any topic:
+
+```bash
+POST /api/coder/exercise/generate
+```
+
+After completing the exercise, submit your answer for evaluation:
+
+```bash
+POST /api/coder/exercise/:exerciseId/submit
+```
+
+You can review your past submissions at any time:
+
+```bash
+GET /api/coder/exercise/:exerciseId/submissions
+```
+
+## Searching learning resources
+
+Kairo includes a RAG-powered resource search backed by the `all-MiniLM-L6-v2` embedding model. Use it to find PDFs and links your TL has uploaded:
+
+```bash
+POST /api/coder/resources/search
+```
+
+To list all resources available to your clan:
+
+```bash
+GET /api/coder/resources
+```
+
+To download a specific resource:
+
+```bash
+GET /api/coder/resource/:id/download
+```
+
+## Available views
+
+| View | Path | Purpose |
+|------|------|---------|
+| Dashboard | `frontend/src/views/coder/dashboard.html` | Focus cards and progress overview |
+| Assignment | `frontend/src/views/coder/assignment.html` | Daily activities and evidence submission |
+| AI Trainer | `frontend/src/views/coder/IAtrainer.html` | AI chat tutor |
+| Onboarding | `frontend/src/views/coder/onboarding.html` | Soft skills assessment (first login only) |
+| Profile | `frontend/src/views/coder/profile.html` | Account settings |
+
+## API reference summary
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/coder/dashboard` | Dashboard data and focus cards |
+| `GET` | `/api/coder/plan` | Active learning plan |
+| `POST` | `/api/coder/plan/request` | Request a new AI-generated plan |
+| `POST` | `/api/coder/plan/:planId/day/:day/complete` | Mark a plan day complete |
+| `GET` | `/api/coder/plans/:planId` | Plan details |
+| `POST` | `/api/coder/exercise/generate` | Generate a practice exercise |
+| `POST` | `/api/coder/exercise/:exerciseId/submit` | Submit an exercise answer |
+| `GET` | `/api/coder/exercise/:exerciseId/submissions` | List past submissions |
+| `GET` | `/api/coder/resources` | List available resources |
+| `GET` | `/api/coder/resource/:id/download` | Download a resource |
+| `POST` | `/api/coder/resources/search` | Semantic search resources |
+| `PATCH` | `/api/coder/activities/:id/complete` | Mark an activity complete |
+| `PATCH` | `/api/coder/feedback/:id/read` | Mark TL feedback as read |
+| `GET` | `/api/coder/milestones` | Module milestone progress |

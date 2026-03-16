@@ -1,0 +1,135 @@
+---
+title: 'TL dashboard'
+description: 'Retrieve clan overview data including coder progress, risk levels, and performance metrics.'
+---
+
+All Team Leader routes require an active session cookie and the `tl` role. Requests that fail either check return `401` or `403`.
+
+---
+
+## Get dashboard data
+
+```
+GET /api/tl/dashboard
+```
+
+Returns a full clan overview for the authenticated TL: the list of coders in their clan with Moodle progress, soft skills scores, and risk flags, plus aggregate statistics.
+
+<Info>
+  Clan membership is determined automatically from the TL's session. A TL always sees only coders in their own clan.
+</Info>
+
+### Response — 200 OK
+
+<ResponseField name="tl" type="object">
+  <Expandable title="properties">
+    <ResponseField name="fullName" type="string">TL's display name.</ResponseField>
+    <ResponseField name="clanId" type="string">The clan this TL manages.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="coders" type="object[]">
+  All coders in the TL's clan, ordered alphabetically by name.
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Coder's user ID.</ResponseField>
+    <ResponseField name="full_name" type="string">Coder's display name.</ResponseField>
+    <ResponseField name="email" type="string">Registered email address.</ResponseField>
+    <ResponseField name="first_login" type="boolean">`true` if the coder has not yet completed onboarding.</ResponseField>
+    <ResponseField name="clan_id" type="string">Clan identifier.</ResponseField>
+    <ResponseField name="kairo_score" type="integer">Current Kairo score.</ResponseField>
+    <ResponseField name="average_score" type="number | null">Moodle average score. `null` if no Moodle data exists.</ResponseField>
+    <ResponseField name="current_week" type="integer | null">Current Moodle week.</ResponseField>
+    <ResponseField name="autonomy" type="integer | null">Soft skill score 1–5.</ResponseField>
+    <ResponseField name="time_management" type="integer | null">Soft skill score 1–5.</ResponseField>
+    <ResponseField name="problem_solving" type="integer | null">Soft skill score 1–5.</ResponseField>
+    <ResponseField name="communication" type="integer | null">Soft skill score 1–5.</ResponseField>
+    <ResponseField name="teamwork" type="integer | null">Soft skill score 1–5.</ResponseField>
+    <ResponseField name="learning_style" type="string | null">Learning style enum value.</ResponseField>
+    <ResponseField name="risk_level" type="string | null">Most recent unresolved risk flag level: `low`, `medium`, or `high`. `null` if no active flag.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="overview" type="object">
+  Aggregate statistics for the clan.
+  <Expandable title="properties">
+    <ResponseField name="totalCoders" type="integer">Total number of coders in the clan.</ResponseField>
+    <ResponseField name="completedOnboarding" type="integer">Coders who have finished onboarding (`first_login = false`).</ResponseField>
+    <ResponseField name="pendingOnboarding" type="integer">Coders who have not yet completed onboarding.</ResponseField>
+    <ResponseField name="highRiskCoders" type="integer">Number of coders with a `high` or `critical` risk flag.</ResponseField>
+    <ResponseField name="clanAvgScore" type="integer">Mean Kairo score across all clan coders. Defaults to `50` for coders with no score history.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="softSkillsAverage" type="object">
+  Clan-wide average for each soft skill, calculated only from coders who have completed the assessment.
+  <Expandable title="properties">
+    <ResponseField name="autonomy" type="number">Clan average autonomy score.</ResponseField>
+    <ResponseField name="time_management" type="number">Clan average time management score.</ResponseField>
+    <ResponseField name="problem_solving" type="number">Clan average problem solving score.</ResponseField>
+    <ResponseField name="communication" type="number">Clan average communication score.</ResponseField>
+    <ResponseField name="teamwork" type="number">Clan average teamwork score.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `404`  | TL record not found in the database. |
+| `500`  | Internal server error loading dashboard data. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:3000/api/tl/dashboard \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "tl": {
+    "fullName": "Maria Gomez",
+    "clanId": "Turing"
+  },
+  "coders": [
+    {
+      "id": 42,
+      "full_name": "Alex Rivera",
+      "email": "alex@example.com",
+      "first_login": false,
+      "clan_id": "Turing",
+      "kairo_score": 72,
+      "average_score": 74.5,
+      "current_week": 3,
+      "autonomy": 3,
+      "time_management": 4,
+      "problem_solving": 3,
+      "communication": 5,
+      "teamwork": 4,
+      "learning_style": "visual",
+      "risk_level": null
+    }
+  ],
+  "overview": {
+    "totalCoders": 8,
+    "completedOnboarding": 7,
+    "pendingOnboarding": 1,
+    "highRiskCoders": 1,
+    "clanAvgScore": 68
+  },
+  "softSkillsAverage": {
+    "autonomy": 3.2,
+    "time_management": 3.8,
+    "problem_solving": 3.5,
+    "communication": 4.1,
+    "teamwork": 3.9
+  }
+}
+```

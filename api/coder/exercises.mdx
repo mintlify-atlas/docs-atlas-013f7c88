@@ -1,0 +1,244 @@
+---
+title: 'Exercises'
+description: 'Generate AI-powered practice exercises and submit solutions.'
+---
+
+Exercises are AI-generated coding challenges scoped to a specific plan day and topic. The Node.js server caches exercises in the `exercises` table and calls the Python AI service only on a cache miss.
+
+<Note>
+  The `code` field in the submit body is the coder's solution. The Python AI service does not evaluate code at submission time — the TL reviews submissions manually via the [evidence submissions](/api/tl/submissions) endpoints.
+</Note>
+
+---
+
+## Generate an exercise
+
+```
+POST /api/coder/exercise/generate
+```
+
+Generates a new AI exercise for a given plan day and topic. Returns a cached exercise immediately if one already exists for the same `planId` + `dayNumber` combination.
+
+On a cache miss, the server calls `POST /generate-exercise` on the Python AI service.
+
+### Request body
+
+<ParamField body="planId" type="integer" required>
+  The active plan's database ID.
+</ParamField>
+
+<ParamField body="dayNumber" type="integer" required>
+  The day within the plan (1–20) for which to generate the exercise.
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  Topic or skill to focus the exercise on (e.g. `"SQL JOINs"`).
+</ParamField>
+
+<ParamField body="weekNumber" type="integer">
+  Current Moodle week. Defaults to `1`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Additional context or instructions to pass to the AI generator.
+</ParamField>
+
+<ParamField body="difficulty" type="string" default="intermediate">
+  Difficulty level: `beginner`, `intermediate`, or `advanced`.
+</ParamField>
+
+<ParamField body="moduleName" type="string" default="Bases de Datos">
+  Name of the current module, used to contextualise the exercise.
+</ParamField>
+
+<ParamField body="language" type="string">
+  Programming language for the exercise (e.g. `"SQL"`, `"JavaScript"`). `null` lets the AI decide.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+<ResponseField name="exercise" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="integer">Exercise database ID.</ResponseField>
+    <ResponseField name="title" type="string">Exercise title.</ResponseField>
+    <ResponseField name="description" type="string">Problem description shown to the coder.</ResponseField>
+    <ResponseField name="language" type="string">Programming language.</ResponseField>
+    <ResponseField name="starter_code" type="string">Boilerplate code provided to the coder.</ResponseField>
+    <ResponseField name="hints" type="string[]" >Optional hints array.</ResponseField>
+    <ResponseField name="topic" type="string">Topic the exercise covers.</ResponseField>
+    <ResponseField name="difficulty" type="string">Difficulty level.</ResponseField>
+    <ResponseField name="expected_output" type="string">Expected result or output description.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cached" type="boolean">`true` when the response was served from the Node.js cache (no Python call was made).</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `planId`, `dayNumber`, or `topic` is missing. |
+| `401`  | No active session. |
+| `502`  | Python AI service is unreachable or returned an error. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/coder/exercise/generate \
+  --header 'Content-Type: application/json' \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --data '{
+    "planId": 17,
+    "dayNumber": 3,
+    "topic": "SQL JOINs",
+    "difficulty": "intermediate",
+    "moduleName": "Bases de Datos"
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "exercise": {
+    "id": 55,
+    "title": "Employees and departments",
+    "description": "Write a query that returns each employee's name and their department name.",
+    "language": "SQL",
+    "starter_code": "SELECT -- your code here",
+    "hints": ["Use an INNER JOIN on department_id"],
+    "topic": "SQL JOINs",
+    "difficulty": "intermediate",
+    "expected_output": "A result set with columns: employee_name, department_name"
+  },
+  "cached": false
+}
+```
+
+---
+
+## Submit a solution
+
+```
+POST /api/coder/exercise/:exerciseId/submit
+```
+
+Saves the coder's solution for TL review and awards Kairo points for the submission.
+
+<Warning>
+  You can only submit solutions for exercises that belong to your active plan. Attempting to submit for another coder's exercise returns `404`.
+</Warning>
+
+### Path parameters
+
+<ParamField path="exerciseId" type="integer" required>
+  The exercise database ID.
+</ParamField>
+
+### Request body
+
+<ParamField body="code" type="string" required>
+  The coder's solution. Cannot be empty or whitespace-only.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="submissionId" type="integer">ID of the created `exercise_submissions` record.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `code` field is missing or empty. |
+| `401`  | No active session. |
+| `404`  | Exercise not found or does not belong to the coder's plan. |
+| `500`  | Failed to save the submission. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/coder/exercise/55/submit \
+  --header 'Content-Type: application/json' \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --data '{
+    "code": "SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.department_id = d.id;"
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "submissionId": 88,
+  "message": "¡Solución enviada! Tu TL podrá revisarla."
+}
+```
+
+---
+
+## List submissions for an exercise
+
+```
+GET /api/coder/exercise/:exerciseId/submissions
+```
+
+Returns the coder's last 5 submissions for a given exercise, ordered by most recent first.
+
+### Path parameters
+
+<ParamField path="exerciseId" type="integer" required>
+  The exercise database ID.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="submissions" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Submission ID.</ResponseField>
+    <ResponseField name="code_submitted" type="string">The code the coder submitted.</ResponseField>
+    <ResponseField name="submitted_at" type="string">ISO 8601 submission timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `500`  | Failed to fetch submissions. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:3000/api/coder/exercise/55/submissions \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "submissions": [
+    {
+      "id": 88,
+      "code_submitted": "SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.department_id = d.id;",
+      "submitted_at": "2026-03-13T10:45:00.000Z"
+    }
+  ]
+}
+```

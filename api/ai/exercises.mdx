@@ -1,0 +1,246 @@
+---
+title: 'Exercises'
+description: 'Generate programming exercises and save submitted solutions for TL review.'
+---
+
+The AI generates coding exercises scoped to a specific plan day and topic. Results are cached in the `exercises` table — the same exercise is always returned for a given `plan_id` + `day_number` combination. Solution submissions are stored for TL review; there is no automated grading.
+
+<Info>
+  These are **internal endpoints** called by the Node.js backend. `POST /generate-exercise` is invoked from `POST /api/coder/exercise/generate`; `POST /exercise/{id}/submit` is invoked from `POST /api/coder/exercise/:exerciseId/submit`.
+</Info>
+
+**Base URL:** `http://localhost:8000`
+
+---
+
+## Generate an exercise
+
+```
+POST /generate-exercise
+```
+
+Returns a cached exercise on a cache hit (no LLM call). On a cache miss, calls Groq LLM with a personalized prompt and saves the result to the `exercises` table.
+
+The language is auto-detected from `module_name` if `language` is not provided.
+
+### Request body
+
+<ParamField body="coder_id" type="integer" required>
+  Database ID of the coder. Used to load the soft skills profile for personalization.
+</ParamField>
+
+<ParamField body="plan_id" type="integer" required>
+  The active plan's database ID. Combined with `day_number` as the cache key.
+</ParamField>
+
+<ParamField body="day_number" type="integer" required>
+  Day within the plan (1–20) for which to generate the exercise.
+</ParamField>
+
+<ParamField body="week_number" type="integer" required>
+  Current Moodle week. Included in the generation prompt for context.
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  Topic for the exercise (e.g. `"SQL JOINs"`).
+</ParamField>
+
+<ParamField body="description" type="string" default="">
+  Additional context or instructions passed to the AI generator.
+</ParamField>
+
+<ParamField body="difficulty" type="string" default="intermediate">
+  Difficulty level: `beginner`, `intermediate`, or `advanced`.
+</ParamField>
+
+<ParamField body="module_name" type="string" default="Bases de Datos">
+  Name of the current module. Used for language auto-detection and prompt context.
+</ParamField>
+
+<ParamField body="language" type="string">
+  Programming language for the exercise (e.g. `"sql"`, `"python"`, `"javascript"`). When omitted, the service infers the language from `module_name`.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on a successful generation or cache hit. `false` when the LLM call or JSON parsing failed and a fallback exercise was returned.
+</ResponseField>
+
+<ResponseField name="exercise" type="object">
+  The generated or cached exercise.
+  <Expandable title="properties">
+    <ResponseField name="id" type="integer">Exercise database ID. Only present on a cache miss after saving.</ResponseField>
+    <ResponseField name="title" type="string">Exercise title.</ResponseField>
+    <ResponseField name="description" type="string">Problem description shown to the coder.</ResponseField>
+    <ResponseField name="language" type="string">Programming language for the exercise.</ResponseField>
+    <ResponseField name="difficulty" type="string">Difficulty level.</ResponseField>
+    <ResponseField name="topic" type="string">Topic the exercise covers.</ResponseField>
+    <ResponseField name="starter_code" type="string">Boilerplate code provided to the coder.</ResponseField>
+    <ResponseField name="solution" type="string">Reference solution (not shown to coders).</ResponseField>
+    <ResponseField name="expected_output" type="string">Description of the expected result.</ResponseField>
+    <ResponseField name="hints" type="string[]">Optional hints for the coder.</ResponseField>
+    <ResponseField name="status" type="string">`fallback` when the LLM was unavailable and a static placeholder was returned; omitted otherwise.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cached" type="boolean">
+  `true` when the exercise was served from the database cache without calling the LLM.
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `500`  | Unexpected server error. |
+
+<Note>
+  LLM failures do not return a 5xx status. Instead, `success` is `false` and `exercise.status` is `"fallback"` with a placeholder exercise.
+</Note>
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/generate-exercise \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "coder_id": 42,
+    "plan_id": 17,
+    "day_number": 3,
+    "week_number": 2,
+    "topic": "SQL JOINs",
+    "difficulty": "intermediate",
+    "module_name": "Bases de Datos"
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/generate-exercise",
+    json={
+        "coder_id": 42,
+        "plan_id": 17,
+        "day_number": 3,
+        "week_number": 2,
+        "topic": "SQL JOINs",
+        "difficulty": "intermediate",
+        "module_name": "Bases de Datos",
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "exercise": {
+    "id": 55,
+    "title": "Empleados y departamentos",
+    "description": "Escribe una consulta que devuelva el nombre de cada empleado junto con el nombre de su departamento.",
+    "language": "sql",
+    "difficulty": "intermediate",
+    "topic": "SQL JOINs",
+    "starter_code": "-- Ejercicio: SQL JOINs\n-- Escribe tu consulta aquí\nSELECT \n",
+    "solution": "SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.department_id = d.id;",
+    "expected_output": "Result set with columns: employee_name, department_name",
+    "hints": ["Use INNER JOIN on department_id", "Alias the tables for cleaner SQL"]
+  },
+  "cached": false
+}
+```
+
+---
+
+## Submit a solution
+
+```
+POST /exercise/{exercise_id}/submit
+```
+
+Saves the coder's code submission to the `exercise_submissions` table for TL review. No automated grading or AI evaluation is performed.
+
+<Warning>
+  The TL reviews submissions manually. The coder's code is stored as-is and is visible to the TL via the evidence submissions endpoint.
+</Warning>
+
+### Path parameters
+
+<ParamField path="exercise_id" type="integer" required>
+  The exercise database ID.
+</ParamField>
+
+### Request body
+
+<ParamField body="coder_id" type="integer" required>
+  Database ID of the submitting coder.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The coder's solution. Cannot be empty or whitespace-only.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on a successful save.
+</ResponseField>
+
+<ResponseField name="submission_id" type="integer">
+  ID of the created `exercise_submissions` record.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message.
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `coder_id` is missing. |
+| `400`  | `code` is empty or whitespace-only. |
+| `500`  | Submission could not be saved to the database. |
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/exercise/55/submit \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "coder_id": 42,
+    "code": "SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.department_id = d.id;"
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/exercise/55/submit",
+    json={
+        "coder_id": 42,
+        "code": "SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.department_id = d.id;",
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "submission_id": 88,
+  "message": "¡Solución enviada! Tu TL podrá revisar tu código."
+}
+```

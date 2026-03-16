@@ -1,0 +1,163 @@
+---
+title: 'Rankings'
+description: 'View coder performance rankings within clans and across the cohort.'
+---
+
+Ranking data is derived from the `kairo_score` column on the `users` table. Scores increase through learning activities, day completions, and TL-approved submissions.
+
+---
+
+## Get score rankings
+
+```
+GET /api/tl/ranking
+```
+
+Returns two ranked lists: all coders in the TL's clan sorted by score, and the top 10 coders globally across all clans.
+
+### Response — 200 OK
+
+<ResponseField name="clan" type="string">The TL's clan identifier.</ResponseField>
+
+<ResponseField name="clanRanking" type="object[]">
+  All active coders in the TL's clan, sorted by `kairo_score` descending.
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Coder user ID.</ResponseField>
+    <ResponseField name="full_name" type="string">Coder's display name.</ResponseField>
+    <ResponseField name="kairo_score" type="integer">Current Kairo score.</ResponseField>
+    <ResponseField name="clan" type="string">Clan identifier.</ResponseField>
+    <ResponseField name="rank" type="integer">Rank within the clan (1 = highest score). Ties share the same rank.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="globalRanking" type="object[]">
+  Top 10 active coders across all clans.
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Coder user ID.</ResponseField>
+    <ResponseField name="full_name" type="string">Coder's display name.</ResponseField>
+    <ResponseField name="kairo_score" type="integer">Current Kairo score.</ResponseField>
+    <ResponseField name="clan" type="string">Clan the coder belongs to.</ResponseField>
+    <ResponseField name="rank" type="integer">Global rank across all clans.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `500`  | Failed to fetch ranking data. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:3000/api/tl/ranking \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "clan": "Turing",
+  "clanRanking": [
+    { "id": 42, "full_name": "Alex Rivera", "kairo_score": 95, "clan": "Turing", "rank": 1 },
+    { "id": 43, "full_name": "Jamie Lee",   "kairo_score": 88, "clan": "Turing", "rank": 2 },
+    { "id": 44, "full_name": "Sam Torres",  "kairo_score": 71, "clan": "Turing", "rank": 3 }
+  ],
+  "globalRanking": [
+    { "id": 42, "full_name": "Alex Rivera",  "kairo_score": 95, "clan": "Turing",  "rank": 1 },
+    { "id": 99, "full_name": "Dana Kim",     "kairo_score": 92, "clan": "Tesla",   "rank": 2 },
+    { "id": 43, "full_name": "Jamie Lee",    "kairo_score": 88, "clan": "Turing",  "rank": 3 }
+  ]
+}
+```
+
+---
+
+## Get score history for a coder
+
+```
+GET /api/tl/coder/:id/score
+```
+
+Returns the last 20 Kairo score events for a specific coder, with the coder's current total score.
+
+<Info>
+  Score events are one of: `day_complete`, `exercise_submit`, `tl_approved`, `plan_complete`, or `inactivity`. Positive events increase the score; `inactivity` events decrease it.
+</Info>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The coder's user ID.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="coderId" type="integer">The requested coder's user ID.</ResponseField>
+<ResponseField name="currentScore" type="integer">The coder's current Kairo score. Defaults to `0` if no events exist.</ResponseField>
+
+<ResponseField name="history" type="object[]">
+  Score events ordered by most recent first.
+  <Expandable title="item properties">
+    <ResponseField name="label" type="string">
+      Human-readable event label. Possible values:
+      - `Día completado` — a plan day was marked complete
+      - `Ejercicio enviado` — an exercise solution was submitted
+      - `TL aprobó solución` — a TL reviewed a submission
+      - `Plan completado (bonus)` — all 20 plan days completed
+      - `Días sin actividad` — inactivity penalty
+    </ResponseField>
+    <ResponseField name="points" type="integer">Points awarded (positive) or deducted (negative) by this event.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp of the event.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `500`  | Failed to fetch score history. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:3000/api/tl/coder/42/score \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "coderId": 42,
+  "currentScore": 95,
+  "history": [
+    {
+      "label": "TL aprobó solución",
+      "points": 15,
+      "createdAt": "2026-03-14T16:00:00.000Z"
+    },
+    {
+      "label": "Día completado",
+      "points": 10,
+      "createdAt": "2026-03-13T09:45:00.000Z"
+    },
+    {
+      "label": "Ejercicio enviado",
+      "points": 5,
+      "createdAt": "2026-03-12T11:00:00.000Z"
+    }
+  ]
+}
+```

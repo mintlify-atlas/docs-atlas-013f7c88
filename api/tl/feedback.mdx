@@ -1,0 +1,102 @@
+---
+title: 'Feedback'
+description: 'Send feedback messages to coders and review their progress.'
+---
+
+Feedback messages appear as notifications in the coder's dashboard. When a TL submits feedback, a real-time notification is sent to the coder via the notification service and the `is_read` flag is set to `false`, triggering the notification bell indicator.
+
+---
+
+## Submit feedback
+
+```
+POST /api/tl/feedback
+```
+
+Creates a new feedback record in `tl_feedback` and dispatches a real-time notification to the coder.
+
+### Request body
+
+<ParamField body="coderId" type="integer" required>
+  The user ID of the coder receiving the feedback.
+</ParamField>
+
+<ParamField body="feedbackText" type="string" required>
+  The feedback message body. Sanitized before storage.
+</ParamField>
+
+<ParamField body="feedbackType" type="string" required>
+  Category of feedback. Must be one of: `weekly`, `activity`, `general`.
+</ParamField>
+
+<ParamField body="planId" type="integer">
+  Optional ID of the learning plan this feedback relates to. Links the feedback to a specific plan in `tl_feedback.plan_id`.
+</ParamField>
+
+### Response — 201 Created
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">Confirmation string.</ResponseField>
+
+<ResponseField name="data" type="object">
+  The created `tl_feedback` record.
+  <Expandable title="properties">
+    <ResponseField name="id" type="integer">Feedback record ID.</ResponseField>
+    <ResponseField name="coder_id" type="integer">Recipient coder ID.</ResponseField>
+    <ResponseField name="tl_id" type="integer">Sender TL ID.</ResponseField>
+    <ResponseField name="plan_id" type="integer | null">Associated plan ID, or `null`.</ResponseField>
+    <ResponseField name="feedback_text" type="string">Stored feedback message.</ResponseField>
+    <ResponseField name="feedback_type" type="string">Feedback category.</ResponseField>
+    <ResponseField name="is_read" type="boolean">Always `false` on creation. Set to `true` when the coder reads the message.</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `coderId`, `feedbackText`, or `feedbackType` is missing. |
+| `401`  | No active session. |
+| `403`  | User is not a TL. |
+| `500`  | Failed to submit feedback. |
+
+<Note>
+  The coder can acknowledge feedback using `PATCH /api/coder/feedback/:id/read`. When read, a real-time notification is sent back to the TL confirming receipt.
+</Note>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/tl/feedback \
+  --header 'Content-Type: application/json' \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --data '{
+    "coderId": 42,
+    "feedbackText": "Great progress on SQL JOINs this week. Focus on query optimization next.",
+    "feedbackType": "weekly",
+    "planId": 17
+  }'
+```
+
+</CodeGroup>
+
+```json 201
+{
+  "success": true,
+  "message": "Feedback registered",
+  "data": {
+    "id": 34,
+    "coder_id": 42,
+    "tl_id": 10,
+    "plan_id": 17,
+    "feedback_text": "Great progress on SQL JOINs this week. Focus on query optimization next.",
+    "feedback_type": "weekly",
+    "is_read": false,
+    "created_at": "2026-03-14T15:00:00.000Z"
+  }
+}
+```

@@ -1,0 +1,203 @@
+---
+title: 'OTP verification'
+description: 'Verify email addresses and complete registration using one-time passwords.'
+---
+
+After [registering](/api/auth/register), users receive a 6-digit one-time password (OTP) by email. They must submit this code to verify ownership of the address and create their first session. OTPs expire after **15 minutes**.
+
+---
+
+## Verify OTP
+
+Verifies the OTP code submitted by the user. On success, marks the account as verified, creates a session, and returns the user object.
+
+```
+POST /api/auth/verify-otp
+```
+
+<ParamField body="email" type="string" required>
+  The email address the OTP was sent to.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The 6-digit verification code from the email.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on successful verification.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Unique user identifier.
+    </ResponseField>
+    <ResponseField name="fullName" type="string">
+      User's display name.
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      Account role: `coder` or `tl`.
+    </ResponseField>
+    <ResponseField name="clanId" type="string">
+      Assigned clan, or `null`.
+    </ResponseField>
+    <ResponseField name="firstLogin" type="boolean">
+      `true` if the user has not yet completed onboarding.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | Code is invalid, already used, or expired. |
+| `500`  | Session initialization failed or server error. |
+
+<Warning>
+  Each OTP can only be used once. Requesting a [resend](#resend-otp) invalidates all previous unused codes for that email.
+</Warning>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/auth/verify-otp \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "email": "alex@example.com",
+    "code": "482910"
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "user": {
+    "id": "usr_abc123",
+    "fullName": "Alex Rivera",
+    "role": "coder",
+    "clanId": "clan_42",
+    "firstLogin": true
+  }
+}
+```
+
+```json 400
+{
+  "error": "Invalid or expired code."
+}
+```
+
+---
+
+## Resend OTP
+
+Sends a new OTP to the specified email address. All previously issued, unused codes for this address are invalidated before the new one is created.
+
+```
+POST /api/auth/resend-otp
+```
+
+<ParamField body="email" type="string" required>
+  The email address to resend the verification code to. Must belong to an unverified account.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+<ResponseField name="ttl" type="number">New OTP validity window in seconds (900).</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `email` missing, or the account is already verified. |
+| `404`  | No account found for this email. |
+| `500`  | Failed to send the email. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/auth/resend-otp \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "email": "alex@example.com"
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "message": "A new verification code has been sent.",
+  "ttl": 900
+}
+```
+
+---
+
+## Complete onboarding
+
+Marks a coder's onboarding as complete by setting `first_login` to `false`. Optionally assigns or updates the user's clan. This endpoint should be called after the soft skills diagnostic assessment is submitted.
+
+```
+PATCH /api/auth/complete-onboarding
+```
+
+Requires: active session (`isAuthenticated` middleware) + `coder` role (`hasRole('coder')` middleware).
+
+<ParamField body="clan_id" type="string">
+  Clan to assign to the user. Optional. Updates the user's clan if provided.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">`"Onboarding completed."`</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session or user not found. |
+| `403`  | Authenticated user does not have the `coder` role. |
+| `500`  | Database update failed. |
+
+<Note>
+  This endpoint is role-restricted. Users with role `tl` or `admin` will receive a `403 Forbidden` response.
+</Note>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request PATCH \
+  --url http://localhost:3000/api/auth/complete-onboarding \
+  --header 'Content-Type: application/json' \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --data '{
+    "clan_id": "clan_42"
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "message": "Onboarding completed."
+}
+```

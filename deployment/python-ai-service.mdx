@@ -1,0 +1,212 @@
+---
+title: "Deploying the Python AI service"
+description: "Deploy the Kairo AI microservice (FastAPI) to production."
+---
+
+The Python AI service is Kairo's AI brain. It runs LLM inference via Groq, generates personalized learning plans and focus cards, powers the AI chat tutor, and uses `all-MiniLM-L6-v2` embeddings for RAG-based resource search.
+
+## Prerequisites
+
+- Python 3.11 or higher
+- pip
+- A Groq API key
+- Supabase service role key (bypasses RLS — keep this secret)
+
+## Start command
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Add `--reload` in development for automatic restarts on file changes.
+
+**Verification:** look for both of these lines in your logs:
+
+```
+INFO: Supabase client initialized
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+The startup log also prints the loaded LLM model name, embeddings status, environment, and CORS origins:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Kairo AI Service v2.3.0  |  starting up
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  LLM model    : llama-3.3-70b-versatile
+  Embeddings   : ✓ all-MiniLM-L6-v2 (384d)
+  Environment  : production
+  CORS origins : [...]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+## Environment variables
+
+Create a `.env` file in `backend-python/` with the following variables. In production, set these in your hosting platform.
+
+```env backend-python/.env
+# SERVICE
+PORT=8000
+ENV=production
+
+# GROQ LLM (OPENAI_API_KEY is used as the Groq API key)
+OPENAI_API_KEY=your_groq_api_key
+MODEL_NAME=llama-3.3-70b-versatile
+
+# SUPABASE
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_KEY=your_service_role_key
+
+# INTER-SERVICE
+NODE_URL=https://your-node-service-url
+FRONTEND_URL=https://your-frontend-origin
+```
+
+<Warning>
+  `SUPABASE_SERVICE_KEY` is the service role key, which bypasses Supabase row-level security. Never expose this key to the browser or commit it to version control.
+</Warning>
+
+<Note>
+  Despite the variable name `OPENAI_API_KEY`, Kairo uses the Groq client (`groq==1.1.1`). Set this variable to your Groq API key, not an OpenAI key.
+</Note>
+
+## Dependencies
+
+Key packages from `requirements.txt`:
+
+| Package | Version | Purpose |
+|---------|---------|--------|
+| `fastapi` | 0.115.0 | Web framework |
+| `uvicorn` | 0.30.6 | ASGI server |
+| `groq` | 1.1.1 | LLM inference via Groq API |
+| `supabase` | 2.7.4 | Database client |
+| `sentence-transformers` | — | `all-MiniLM-L6-v2` embeddings for RAG |
+| `pdfplumber` | 0.11.4 | PDF text extraction for resource indexing |
+| `fpdf2` | 2.8.1 | PDF generation for reports |
+| `numpy` | 1.26.4 | Vector math for similarity search |
+
+Install all dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Embeddings model
+
+Kairo loads `all-MiniLM-L6-v2` from `sentence-transformers` at startup. This model produces **384-dimensional** vectors used for semantic search over learning resources.
+
+If the model fails to load (e.g., due to a missing package), the service still starts but the `/search-resources` endpoint returns empty results. The startup log shows `✗ not loaded` next to the embeddings line in that case.
+
+## nixpacks.toml (Railway)
+
+The repository includes a `nixpacks.toml` in `backend-python/` that Railway uses to build and start the service:
+
+```toml backend-python/nixpacks.toml
+[phases.setup]
+nixPkgs = ["python311", "python311Packages.pip"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+```
+
+Railway injects `$PORT` automatically — you do not need to hardcode port 8000 in the start command.
+
+## Deployment to Railway
+
+<Steps>
+  <Step title="Connect your repository">
+    In the Railway dashboard, create a new service and connect your GitHub repository. Set the root directory to `backend-python`.
+  </Step>
+  <Step title="Set environment variables">
+    Add all variables from the table above in the Railway service's **Variables** panel. Railway automatically injects `PORT`.
+  </Step>
+  <Step title="Confirm nixpacks build">
+    Railway detects `nixpacks.toml` automatically and uses Python 3.11. No manual build configuration is needed.
+  </Step>
+  <Step title="Deploy">
+    Trigger a deployment and watch the logs for the startup banner and `Uvicorn running on http://0.0.0.0:...`.
+  </Step>
+</Steps>
+
+## Deployment to Render
+
+<Steps>
+  <Step title="Create a Web Service">
+    In Render, create a new **Web Service** and connect your repository. Set the root directory to `backend-python`.
+  </Step>
+  <Step title="Configure build and start commands">
+    - **Build command:** `pip install -r requirements.txt`
+    - **Start command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
+  </Step>
+  <Step title="Set environment variables">
+    Add all variables in the Render service's **Environment** tab.
+  </Step>
+</Steps>
+
+## Health check
+
+The Python service exposes a health endpoint that Railway also uses as its probe:
+
+```bash
+GET /health
+```
+
+Example response:
+
+```json
+{
+  "status": "online",
+  "service": "Kairo AI Engine",
+  "version": "2.3.0",
+  "model": "llama-3.3-70b-versatile",
+  "embeddings": "all-MiniLM-L6-v2 (384d)",
+  "environment": "production",
+  "endpoints": [
+    "POST /generate-plan",
+    "POST /generate-focus-cards",
+    "POST /chat/ask",
+    "POST /generate-report",
+    "POST /generate-exercise",
+    "POST /exercise/{id}/submit",
+    "POST /search-resources"
+  ]
+}
+```
+
+You can also call this endpoint through the Node.js proxy at `GET /api/ai/health`.
+
+## API documentation
+
+FastAPI generates interactive API documentation automatically:
+
+| URL | Interface |
+|-----|-----------|
+| `GET /docs` | Swagger UI |
+| `GET /redoc` | ReDoc |
+
+<Note>
+  Consider restricting access to `/docs` and `/redoc` in production by setting `docs_url=None` and `redoc_url=None` in the FastAPI constructor if you do not want the API schema publicly visible.
+</Note>
+
+## Local development setup
+
+<CodeGroup>
+
+```bash Linux / macOS
+python3 -m venv env
+source env/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+```powershell Windows
+python -m venv env
+env\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+</CodeGroup>

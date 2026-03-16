@@ -1,0 +1,155 @@
+---
+title: "Team Leader role"
+description: "How Team Leaders use Kairo's analytics and AI tools to mentor and support their clan."
+---
+
+Team Leaders (TLs) are mentors responsible for tracking the progress of an entire clan of coders. Kairo gives you an analytics dashboard, AI-generated reports, and direct feedback tools so you can identify struggling coders before they fall behind.
+
+## Account setup
+
+TL accounts use the same authentication flow as coders — email + OTP or OAuth (Google/GitHub). The only difference is that your account is created with `role = 'tl'` in the `users` table.
+
+<Info>
+  TLs skip the onboarding assessment entirely. The `checkOnboarding` middleware checks for `role = 'tl'` and calls `next()` immediately — you are taken directly to your dashboard after your first login.
+</Info>
+
+All TL routes are protected by `isAuthenticated` followed by `hasRole('tl')`. Any request from a non-TL session receives a `403 Forbidden` response.
+
+## Core responsibilities
+
+### 1. Monitor the clan dashboard
+
+Open `dashboard.html` to see a real-time overview of your clan's health. The dashboard queries the `v_coder_risk_analysis` view and surfaces:
+
+- **Risk alerts** — coders automatically flagged as `high` or `medium` risk based on low `average_score` (below 70) or low `autonomy` score (2 or below)
+- **Completion percentages** — derived from the `v_coder_dashboard` view
+- **Clan rankings** — ordered by `average_score`, updated in real time
+
+```bash
+GET /api/tl/dashboard
+```
+
+### 2. Review coder progress and score history
+
+Drill into any coder's score history to understand trends over time:
+
+```bash
+GET /api/tl/coder/:id/score
+```
+
+The response includes the full historical score record from `moodle_progress`, so you can spot whether a drop is recent or part of a longer pattern.
+
+To see how your clan ranks overall:
+
+```bash
+GET /api/tl/ranking
+```
+
+### 3. Send feedback
+
+Send weekly, activity-specific, or general feedback directly to a coder:
+
+```bash
+POST /api/tl/feedback
+```
+
+Feedback is stored in the `tl_feedback` table with `is_read = false`. The coder sees a notification bell indicator until they open the message.
+
+Feedback types:
+
+| Type | When to use |
+|------|-------------|
+| `weekly` | End-of-week summary of progress |
+| `activity` | Targeted comment on a specific activity or submission |
+| `general` | Catch-all for check-ins or encouragement |
+
+### 4. Review and score evidence submissions
+
+Coders upload evidence (PDF files or links) for their completed activities. You review and score each submission:
+
+```bash
+GET /api/tl/submissions
+POST /api/tl/submissions/:id/review
+```
+
+Each review awards the coder **+15 points**, which feeds into their `average_score` and risk calculation. Consistent review keeps risk flags accurate.
+
+### 5. Upload learning resources
+
+Upload PDF resources for your clan to find via the semantic search:
+
+```bash
+POST /api/tl/resource/upload
+```
+
+<Warning>
+  Files must be PDFs (`application/pdf`). The maximum file size is **20 MB**. Uploads above this limit are rejected by the multer middleware.
+</Warning>
+
+To manage your uploaded resources:
+
+```bash
+GET /api/tl/resource/list
+DELETE /api/tl/resource/:resourceId
+```
+
+### 6. Generate AI reports
+
+Request an AI-generated executive report for a single coder or your entire clan:
+
+```bash
+POST /api/ai/reports
+```
+
+Reports are stored in the `ai_reports` table with a `target_type` of `coder` or `clan`. Each report includes a `summary_text`, `risk_level`, and `recommendations` field.
+
+## Risk alert workflow
+
+<Steps>
+  <Step title="Identify at-risk coders">
+    On your dashboard, the `v_coder_risk_analysis` view flags coders as `high` risk when `autonomy ≤ 2` **and** `average_score < 70`, and as `medium` risk when either condition is true alone.
+  </Step>
+  <Step title="Investigate score history">
+    Call `GET /api/tl/coder/:id/score` to review the coder's score trend. Check whether the drop is isolated to one module or systemic.
+  </Step>
+  <Step title="Generate an AI report">
+    Call `POST /api/ai/reports` with `target_type: "coder"` and the coder's ID. The AI service cross-references soft skills signals and Moodle scores to produce targeted recommendations.
+  </Step>
+  <Step title="Send targeted feedback">
+    Call `POST /api/tl/feedback` with `feedback_type: "general"` or `"activity"` to address the specific issue. Keep the message actionable.
+  </Step>
+</Steps>
+
+## Key metrics
+
+The following metrics appear throughout the TL dashboard and are used to calculate risk:
+
+| Metric | Source | Description |
+|--------|--------|-------------|
+| `completion_percentage` | `v_coder_dashboard` | Percentage of plan activities marked complete |
+| `average_score` | `moodle_progress` | Academic score from Moodle, updated per module |
+| `risk_level` | `v_coder_risk_analysis` / `risk_flags` | `low`, `medium`, or `high` |
+| Clan ranking | `GET /api/tl/ranking` | Score-ordered list of coders in your clan |
+
+## Available views
+
+| View | Path | Purpose |
+|------|------|---------|
+| Dashboard | `frontend/src/views/tl/dashboard.html` | Clan overview, risk alerts, rankings |
+| Group | `frontend/src/views/tl/group.html` | Detailed per-coder progress and feedback |
+| Assignment | `frontend/src/views/tl/assignment.html` | Evidence review and scoring |
+| Profile | `frontend/src/views/tl/profile.html` | Account settings |
+
+## API reference summary
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tl/dashboard` | Clan dashboard data and risk alerts |
+| `POST` | `/api/tl/feedback` | Send feedback to a coder |
+| `GET` | `/api/tl/submissions` | List evidence submissions for review |
+| `POST` | `/api/tl/submissions/:id/review` | Score an evidence submission (+15 pts) |
+| `GET` | `/api/tl/coder/:id/score` | Coder score history |
+| `POST` | `/api/tl/resource/upload` | Upload a PDF resource (max 20 MB) |
+| `GET` | `/api/tl/resource/list` | List uploaded resources |
+| `DELETE` | `/api/tl/resource/:resourceId` | Delete a resource |
+| `GET` | `/api/tl/ranking` | Clan score ranking |

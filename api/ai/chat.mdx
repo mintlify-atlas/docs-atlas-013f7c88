@@ -1,0 +1,90 @@
+---
+title: "AI chat"
+description: "Ask the AI tutor a question in the context of a coder's active learning plan."
+---
+
+Provides a stateless AI tutor endpoint. Each request is independent — there is no conversation history stored between calls. The AI responds as Kairo, a concise and practical coding tutor.
+
+<Info>
+  This endpoint may be called by the Node.js proxy or directly from the frontend chat widget. It is stateless: context from previous messages is not retained.
+</Info>
+
+<Note>
+  The model used is `llama-3.3-70b-versatile` (Groq) by default. Override with the `MODEL_NAME` environment variable on the Python service.
+</Note>
+
+**Base URL:** `http://localhost:8000`
+
+---
+
+## Ask the tutor
+
+```
+POST /chat/ask
+```
+
+Sends a question to the AI tutor and receives a plain-text answer. Responses are capped at 600 tokens and limited to 3 paragraphs.
+
+### Request body
+
+<ParamField body="message" type="string" required>
+  The coder's question or message. Cannot be empty or whitespace-only.
+</ParamField>
+
+<ParamField body="coder_id" type="integer">
+  Optional coder database ID. Included for logging and context purposes but does not alter the AI response.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="reply" type="string">
+  The AI tutor's answer. Plain text, max 3 paragraphs.
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `message` is empty or whitespace-only. |
+| `500`  | Groq API call failed or is temporarily unavailable. |
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/chat/ask \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "message": "What is the difference between INNER JOIN and LEFT JOIN?",
+    "coder_id": 42
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/chat/ask",
+    json={
+        "message": "What is the difference between INNER JOIN and LEFT JOIN?",
+        "coder_id": 42,
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "reply": "INNER JOIN returns only rows where there is a match in both tables. LEFT JOIN returns all rows from the left table plus matched rows from the right — unmatched right-side columns appear as NULL.\n\nUse INNER JOIN when you only care about records that exist in both tables. Use LEFT JOIN when you want to keep all records from the left table regardless of whether a match exists on the right."
+}
+```
+
+```json 400
+{
+  "detail": "Message cannot be empty"
+}
+```

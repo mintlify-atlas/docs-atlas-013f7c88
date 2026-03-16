@@ -1,0 +1,155 @@
+---
+title: "Coder dashboard"
+description: "Your personalized hub for tracking progress, completing activities, and accessing AI tools."
+---
+
+The coder dashboard is your home screen in Kairo. A single API call (`GET /api/coder/dashboard`) loads everything at once: your profile, Moodle progress, active plan status, soft skills summary, TL feedback notifications, and any active risk flags.
+
+## Dashboard data
+
+The dashboard response is built from seven parallel database queries:
+
+| Section | Source | Key fields |
+|---------|--------|------------|
+| User profile | `users` JOIN `modules` | `full_name`, `clan`, `kairo_score`, `module_name`, `current_module_id` |
+| Soft skills | `soft_skills_assessment` | `autonomy`, `time_management`, `problem_solving`, `communication`, `teamwork`, `learning_style` |
+| Moodle progress | `moodle_progress` | `current_week`, `average_score`, `struggling_topics`, `weeks_completed` |
+| Active plan | `complementary_plans` | `id`, `targeted_soft_skill`, `plan_type`, `generated_at` |
+| TL feedback | `tl_feedback` JOIN `users` | `feedback_text`, `feedback_type`, `is_read`, `tl_name` |
+| Risk flags | `risk_flags` | `risk_level`, `reason`, `detected_at` |
+| Performance tests | `performance_tests` JOIN `modules` | `score`, `status`, `module_name`, `taken_at` |
+
+### The `v_coder_dashboard` view
+
+For activity completion stats, Kairo uses the `v_coder_dashboard` database view:
+
+```sql
+CREATE VIEW v_coder_dashboard AS
+SELECT
+  u.id,
+  u.full_name,
+  u.clan_id,
+  m.name                AS module_name,
+  mp.current_week,
+  mp.average_score,
+  COUNT(DISTINCT pa.id) AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)
+                        AS completed_activities,
+  ROUND(
+    (SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)::NUMERIC /
+     NULLIF(COUNT(DISTINCT pa.id), 0)) * 100, 2
+  )                     AS completion_percentage
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress mp         ON u.id = mp.coder_id
+LEFT JOIN modules m                  ON mp.module_id = m.id
+LEFT JOIN complementary_plans cp     ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities pa         ON cp.id = pa.plan_id
+LEFT JOIN activity_progress ap       ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY u.id, ...;
+```
+
+The `total_activities`, `completed_activities`, and `completion_percentage` fields are what the dashboard progress bar displays.
+
+## Stat cards
+
+The top of the dashboard shows five stat cards populated from the API response:
+
+| Card | Field | Source |
+|------|-------|---------|
+| Current module | `moduleName` | `users` JOIN `modules` |
+| Current week | `currentWeek` | `moodle_progress.current_week` |
+| Moodle score | `averageScore` | `moodle_progress.average_score` |
+| Weeks completed | `weeksCompletedCount` | Length of `moodle_progress.weeks_completed` JSONB array |
+| Kairo Score | `kairoScore` | `users.kairo_score` |
+
+<Info>
+If you are a new coder with no `moodle_progress` row yet, `currentWeek` defaults to `1` and `averageScore` returns `null` (not `0`), so the UI can distinguish "no data" from a real zero score.
+</Info>
+
+## Activity workflow
+
+<Steps>
+  <Step title="View your active plan">
+    On the AI Trainer page (`IAtrainer.html`), your active plan loads automatically. Navigate between weeks using the week tabs and between days using the day arrows.
+  </Step>
+  <Step title="Complete an activity">
+    Click **Completado** on an activity card. This calls:
+
+    ```bash
+    PATCH /api/coder/activities/:id/complete
+    ```
+
+    with the body:
+
+    ```json
+    {
+      "reflectionText": "What I learned today...",
+      "timeSpent": 35
+    }
+    ```
+
+    The record is upserted into `activity_progress` with `completed = true`, your `reflection_text`, and `time_spent_minutes`.
+  </Step>
+  <Step title="Complete a plan day">
+    Marking all activities for a day complete calls:
+
+    ```bash
+    POST /api/coder/plan/:planId/day/:day/complete
+    ```
+
+    This updates the `completed_days` JSONB field on `complementary_plans` and awards Kairo Score points via the scoring service (`day_complete` event = points added to `users.kairo_score`).
+  </Step>
+</Steps>
+
+## Evidence submissions
+
+For activities that require proof of work, you can submit a file or a link. Evidence is stored in the `evidence_submissions` table:
+
+```sql
+CREATE TABLE evidence_submissions (
+  id           SERIAL PRIMARY KEY,
+  activity_id  INT NOT NULL,
+  coder_id     INT NOT NULL,
+  file_url     TEXT,   -- URL to uploaded PDF
+  link_url     TEXT,   -- External URL (GitHub, Notion, etc.)
+  description  TEXT,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+<Note>
+TLs upload PDF resources to the platform (max 20 MB). Evidence file URLs are stored as `file_url` in `evidence_submissions`. Links to external resources use `link_url`.
+</Note>
+
+## Feedback notifications
+
+When your TL sends you feedback, a notification dot appears on the bell icon in the topbar. The dashboard loads the last 5 feedback messages from `tl_feedback`:
+
+- **Unread feedback** (`is_read = false`) shows the red notification dot
+- Clicking a feedback message calls `PATCH /api/coder/feedback/:id/read`, which sets `is_read = true` and notifies the TL in real time that you've read their message
+- Feedback types follow the `feedback_type_enum`: `weekly`, `activity`, or `general`
+
+## Accessing the AI chat tutor
+
+The AI Trainer view (`IAtrainer.html`) contains both your plan activities and an embedded AI chat interface. Navigate to **AI Trainer** from the sidebar or bottom navigation to ask questions, get concept explanations, or request debugging help. See [AI chat tutor](/features/ai-chat) for details on how the chat works.
+
+## Milestones
+
+You can view your progress through the module week by week:
+
+```bash
+GET /api/coder/milestones
+```
+
+The response joins `moodle_progress`, `modules`, and `weeks` to return each week's name, number, and `average_score` in chronological order:
+
+```json
+{
+  "milestones": [
+    { "module_name": "Bases de Datos", "week_number": 1, "week_name": "Introducción a SQL", "average_score": 82.5 },
+    { "module_name": "Bases de Datos", "week_number": 2, "week_name": "Consultas avanzadas", "average_score": 76.0 }
+  ]
+}
+```

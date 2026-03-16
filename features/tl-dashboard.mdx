@@ -1,0 +1,181 @@
+---
+title: "Team Leader dashboard"
+description: "Analytics and mentorship tools for Team Leaders to monitor and support their clan."
+---
+
+The Team Leader dashboard gives you a full picture of your clan's performance, risk status, and learning progress in one view. A single call to `GET /api/tl/dashboard` returns your TL profile, all coder rows with soft skills and risk data, and clan-level aggregate metrics.
+
+## Dashboard overview
+
+The response from `GET /api/tl/dashboard` contains four top-level objects:
+
+```json
+{
+  "tl": { "fullName": "Maria Lopez", "clanId": "Turing" },
+  "coders": [ /* array of coder rows */ ],
+  "overview": {
+    "totalCoders": 12,
+    "completedOnboarding": 10,
+    "pendingOnboarding": 2,
+    "highRiskCoders": 3,
+    "clanAvgScore": 67
+  },
+  "softSkillsAverage": {
+    "autonomy": 3.2,
+    "time_management": 3.7,
+    "problem_solving": 3.1,
+    "communication": 3.5,
+    "teamwork": 3.8
+  }
+}
+```
+
+`pendingOnboarding` is derived from coders where `users.first_login = true` — they haven't completed the soft skills assessment yet.
+
+## Stat cards
+
+The five stat cards at the top of the dashboard surface the most critical numbers:
+
+| Card | Field | Meaning |
+|------|-------|---------|
+| Coders in clan | `totalCoders` | Total active coders in your clan |
+| Onboarding complete | `completedOnboarding` | Coders with `first_login = false` |
+| Pending | `pendingOnboarding` | Coders who haven't finished the assessment |
+| At risk | `highRiskCoders` | Coders with `risk_level = 'high'` or `'critical'` and `resolved = false` |
+| Average score | `clanAvgScore` | Mean `kairo_score` across all coders in the clan |
+
+## Clan filtering
+
+Clans in Kairo are: **Turing**, **Tesla**, and **McCarthy**. Each TL belongs to one clan, stored in `users.clan`. All dashboard queries filter by `u.clan = $1` using the TL's own clan value — you only ever see your own coders.
+
+You can also filter the coder table on the dashboard using three chips:
+- **Todos** — all coders
+- **En riesgo** — coders with an unresolved `risk_flags` row
+- **Pendientes** — coders where `first_login = true`
+
+## Coder risk overview table
+
+The coder table shows each coder's `full_name`, `average_score` (from `moodle_progress`), `current_week`, `learning_style`, and `risk_level` (from `risk_flags` where `resolved = false`). The query in `getAllCodersByClan` orders rows by risk severity:
+
+```sql
+ORDER BY
+  CASE rf.risk_level
+    WHEN 'critical' THEN 1
+    WHEN 'high'     THEN 2
+    WHEN 'medium'   THEN 3
+    ELSE 4
+  END,
+  u.full_name ASC
+```
+
+This ensures your highest-risk coders always appear at the top of the list.
+
+## Score ranking
+
+The ranking view shows how coders compare by Kairo Score within your clan and globally:
+
+```bash
+GET /api/tl/ranking
+```
+
+The response returns two ranked lists:
+
+- **`clanRanking`** — all coders in your clan ordered by `kairo_score DESC`, each with a `RANK()` window function value
+- **`globalRanking`** — top 10 coders across all clans
+
+Kairo Score is tracked in `users.kairo_score`. Points are awarded automatically for `day_complete`, `exercise_submit`, `tl_approved`, and `plan_complete` events, and deducted for `inactivity`.
+
+## Score history per coder
+
+To see how a specific coder's score has changed over time:
+
+```bash
+GET /api/tl/coder/:id/score
+```
+
+The response includes the coder's `currentScore` and an array of up to 20 recent `score_events`:
+
+```json
+{
+  "coderId": 42,
+  "currentScore": 185,
+  "history": [
+    { "label": "TL aprobó solución", "points": 15, "createdAt": "2026-03-14T10:22:00Z" },
+    { "label": "Día completado",     "points": 10, "createdAt": "2026-03-13T16:45:00Z" },
+    { "label": "Días sin actividad", "points": -5, "createdAt": "2026-03-12T00:00:00Z" }
+  ]
+}
+```
+
+Event labels map from the `score_events.event_type` values: `day_complete`, `exercise_submit`, `tl_approved`, `plan_complete`, and `inactivity`.
+
+## Reviewing exercise submissions
+
+When a coder submits code for an exercise, it appears in the submissions section of your dashboard:
+
+```bash
+# Fetch all submissions for your clan
+GET /api/tl/submissions
+```
+
+Each submission row includes the coder's code, the exercise title, language, difficulty, topic, expected output, and the day number it belongs to.
+
+To leave feedback on a submission:
+
+```bash
+POST /api/tl/submissions/:id/review
+Content-Type: application/json
+
+{ "feedbackText": "Good query structure. Try using an alias for readability." }
+```
+
+This updates `exercise_submissions.tl_feedback_text`, sets `reviewed_at` and `reviewed_by`, awards the coder `+15 kairo_score` points (the `tl_approved` event), and sends a real-time notification to the coder.
+
+## Sending feedback to coders
+
+You can send a feedback message to any coder in your clan:
+
+```bash
+POST /api/tl/feedback
+Content-Type: application/json
+
+{
+  "coderId": 42,
+  "feedbackText": "Great progress this week. Focus on your JOIN queries.",
+  "feedbackType": "weekly"
+}
+```
+
+The `feedbackType` field accepts the `feedback_type_enum` values:
+
+| Value | When to use |
+|-------|-------------|
+| `weekly` | End-of-week summary feedback |
+| `activity` | Feedback on a specific activity or submission |
+| `general` | Motivational or general comments |
+
+A real-time notification is dispatched to the coder immediately on submit. The message appears as a red dot on the coder's notification bell until they mark it as read (`is_read` flag in `tl_feedback`).
+
+## Resource management
+
+You can upload PDF study materials for your clan:
+
+```bash
+POST /api/tl/resource/upload
+```
+
+<Warning>
+The maximum file size for PDF uploads is **20 MB**. Uploads above this limit will be rejected.
+</Warning>
+
+Uploaded resources are associated with a clan and module. Coders see relevant resources on their AI Trainer page under "Recursos del TL para este tema", fetched by the Python `POST /search-resources` endpoint using text search against the `resources` table.
+
+## AI reports for the TL
+
+You can request an AI-generated performance report for your entire clan:
+
+```bash
+POST /generate-report   # Python AI service
+```
+
+The report is generated by the Groq LLM and saved to the `ai_reports` table with `target_type = 'clan'`. It includes three sections: a current-state summary, a risks analysis, and 3–5 concrete action items. You can also download a full PDF of coder profiles via `GET /generate-pdf/{clan}`. See [Risk detection](/features/risk-detection) for how at-risk coders are identified before the report runs.

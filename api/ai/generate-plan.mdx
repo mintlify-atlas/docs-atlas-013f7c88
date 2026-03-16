@@ -1,0 +1,188 @@
+---
+title: 'Generate learning plan'
+description: 'Generate a personalized 4-week learning roadmap based on Moodle progress and soft skills data.'
+---
+
+Generates a personalized 20-day learning plan for a coder using Groq LLM (`llama-3.3-70b-versatile` by default). The plan is persisted to the `complementary_plans` table and its activities to `plan_activities`.
+
+<Info>
+  This is an **internal endpoint** called by the Node.js backend at `POST /api/coder/plan/request`. It is not intended to be called directly from the frontend.
+</Info>
+
+<Note>
+  The LLM model and API key are configured via the `MODEL_NAME` and `GROQ_API_KEY` environment variables on the Python service.
+</Note>
+
+**Base URL:** `http://localhost:8000`
+
+---
+
+## Generate a plan
+
+```
+POST /generate-plan
+```
+
+Accepts coder context and Moodle progress data, builds a prompt, calls Groq, and returns the full plan JSON. Supports two plan types:
+
+- `interpretive` — uses soft skills data only; suitable for coders who have not yet started Moodle.
+- `analytical` — incorporates Moodle scores, struggling topics, and completed weeks for a data-driven plan.
+
+### Request body
+
+<ParamField body="coder_id" type="integer" required>
+  Database ID of the coder.
+</ParamField>
+
+<ParamField body="module_id" type="integer" required>
+  ID of the module to generate the plan for.
+</ParamField>
+
+<ParamField body="plan_type" type="string" default="interpretive">
+  Plan generation strategy. Must be `interpretive` or `analytical`.
+</ParamField>
+
+<ParamField body="current_week" type="integer" default="1">
+  The coder's current Moodle week. Used when `plan_type` is `analytical`.
+</ParamField>
+
+<ParamField body="average_score" type="number" default="0.0">
+  Coder's average Moodle score out of 100. When `plan_type` is `analytical` and this value is `0.0`, the service auto-fetches it from `moodle_progress`.
+</ParamField>
+
+<ParamField body="struggling_topics" type="string[]">
+  Topics where the coder is underperforming. Defaults to `[]`.
+</ParamField>
+
+<ParamField body="weeks_completed" type="object[]">
+  Array of completed week objects from Moodle. Defaults to `[]`.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on successful generation.
+</ResponseField>
+
+<ResponseField name="plan_id" type="integer">
+  ID of the newly created plan record in `complementary_plans`.
+</ResponseField>
+
+<ResponseField name="plan" type="object">
+  Full AI-generated plan content.
+  <Expandable title="properties">
+    <ResponseField name="title" type="string">Plan title.</ResponseField>
+    <ResponseField name="targeted_soft_skill" type="string">The soft skill this plan focuses on (e.g. `autonomy`).</ResponseField>
+    <ResponseField name="status" type="string">`ok` on a successful generation, `fallback` if the LLM returned an unusable response.</ResponseField>
+    <ResponseField name="days" type="object[]">
+      Array of 20 daily activity objects.
+      <Expandable title="day properties">
+        <ResponseField name="day" type="integer">Day number (1–20).</ResponseField>
+        <ResponseField name="title" type="string">Day title.</ResponseField>
+        <ResponseField name="activities" type="object[]">
+          Activities for the day.
+          <Expandable title="activity properties">
+            <ResponseField name="title" type="string">Activity title.</ResponseField>
+            <ResponseField name="description" type="string">What the coder should do.</ResponseField>
+            <ResponseField name="estimated_time_minutes" type="integer">Suggested time in minutes.</ResponseField>
+            <ResponseField name="activity_type" type="string">`guided`, `semi_guided`, or `autonomous`.</ResponseField>
+            <ResponseField name="skill_focus" type="string">Soft skill targeted by this activity.</ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Generation context summary.
+  <Expandable title="properties">
+    <ResponseField name="plan_type" type="string">The plan type used: `interpretive` or `analytical`.</ResponseField>
+    <ResponseField name="coder_id" type="integer">Coder ID.</ResponseField>
+    <ResponseField name="module_id" type="integer">Module ID.</ResponseField>
+    <ResponseField name="module_name" type="string">Module display name.</ResponseField>
+    <ResponseField name="current_week" type="integer">Moodle week used during generation.</ResponseField>
+    <ResponseField name="execution_ms" type="integer">Total generation time in milliseconds.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | `plan_type` is not `interpretive` or `analytical`. |
+| `400`  | No soft skills diagnostic found for the coder. |
+| `404`  | Module not found. |
+| `500`  | LLM call or database write failed. |
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/generate-plan \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "coder_id": 42,
+    "module_id": 4,
+    "plan_type": "analytical",
+    "current_week": 3,
+    "average_score": 68.5,
+    "struggling_topics": ["SQL JOINs", "normalization"]
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/generate-plan",
+    json={
+        "coder_id": 42,
+        "module_id": 4,
+        "plan_type": "analytical",
+        "current_week": 3,
+        "average_score": 68.5,
+        "struggling_topics": ["SQL JOINs", "normalization"],
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "plan_id": 17,
+  "plan": {
+    "title": "Plan analítico — Bases de Datos",
+    "targeted_soft_skill": "autonomy",
+    "status": "ok",
+    "days": [
+      {
+        "day": 1,
+        "title": "Repaso de SQL JOINs",
+        "activities": [
+          {
+            "title": "Lectura guiada sobre INNER JOIN",
+            "description": "Lee y reproduce los ejemplos de la documentación oficial.",
+            "estimated_time_minutes": 30,
+            "activity_type": "guided",
+            "skill_focus": "autonomy"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "plan_type": "analytical",
+    "coder_id": 42,
+    "module_id": 4,
+    "module_name": "Bases de Datos",
+    "current_week": 3,
+    "execution_ms": 4820
+  }
+}
+```

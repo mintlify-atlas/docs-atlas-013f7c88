@@ -1,0 +1,184 @@
+---
+title: 'Generate reports'
+description: 'Generate AI-powered analytics reports for Team Leaders on individual coders, clans, or cohorts.'
+---
+
+Generates a structured AI report summarizing a clan's performance, identifying at-risk coders, and producing concrete recommendations for the Team Leader. The report is persisted to the `ai_reports` table and logged in `ai_generation_log`.
+
+<Info>
+  This is an **internal endpoint** called by the Node.js TL routes. It is not intended to be called directly from the frontend.
+</Info>
+
+**Base URL:** `http://localhost:8000`
+
+---
+
+## Generate a report
+
+```
+POST /generate-report
+```
+
+Builds a prompt from clan performance data and calls Groq LLM to produce a three-section report: current state, risks, and recommendations. The result is saved to `ai_reports` with `target_type = "clan"`.
+
+### Request body
+
+<ParamField body="clan" type="string" required>
+  Clan identifier (e.g. `"Alpha"`, `"Bravo"`).
+</ParamField>
+
+<ParamField body="tl_id" type="integer" required>
+  Database ID of the Team Leader requesting the report. Used as `target_id` when saving to `ai_reports`.
+</ParamField>
+
+<ParamField body="total_coders" type="integer" required>
+  Total number of coders in the clan.
+</ParamField>
+
+<ParamField body="average_score" type="number" required>
+  Clan's average Moodle score out of 100.
+</ParamField>
+
+<ParamField body="high_risk_count" type="integer" required>
+  Number of coders classified as high or critical risk.
+</ParamField>
+
+<ParamField body="top_struggling_topics" type="string[]">
+  Topics where the most coders are underperforming. Defaults to `[]`.
+</ParamField>
+
+<ParamField body="soft_skills_summary" type="object">
+  Aggregated soft skills averages for the clan (e.g. `{ "autonomy": 3.2, "teamwork": 4.1 }`). Defaults to `{}`.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on successful generation.
+</ResponseField>
+
+<ResponseField name="report" type="object">
+  AI-generated report object.
+  <Expandable title="properties">
+    <ResponseField name="report_title" type="string">Auto-generated title, e.g. `"Clan Alpha — Performance Report"`.</ResponseField>
+    <ResponseField name="generated_date" type="string">Human-readable date the report was generated, e.g. `"March 16, 2026"`.</ResponseField>
+    <ResponseField name="risk_level" type="string">Overall clan risk classification: `low`, `medium`, `high`, or `critical`.</ResponseField>
+    <ResponseField name="summary" type="string">Paragraph describing the clan's current performance state.</ResponseField>
+    <ResponseField name="risks" type="string">Paragraph describing the main risks and concerns observed.</ResponseField>
+    <ResponseField name="recommendations" type="string">Paragraph with concrete actions the TL should take.</ResponseField>
+    <ResponseField name="action_items" type="string[]">Array of 3–5 specific action items.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  The generated report is also stored in the `ai_reports` table with `target_type = "clan"`, `target_id = tl_id`, and `viewed_by_tl = false`.
+</Note>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `500`  | LLM returned invalid JSON. |
+| `500`  | Groq API call or database write failed. |
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/generate-report \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "clan": "Alpha",
+    "tl_id": 7,
+    "total_coders": 12,
+    "average_score": 72.4,
+    "high_risk_count": 3,
+    "top_struggling_topics": ["SQL JOINs", "normalization"],
+    "soft_skills_summary": {
+      "autonomy": 3.2,
+      "time_management": 2.8,
+      "problem_solving": 3.5,
+      "communication": 4.0,
+      "teamwork": 4.1
+    }
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/generate-report",
+    json={
+        "clan": "Alpha",
+        "tl_id": 7,
+        "total_coders": 12,
+        "average_score": 72.4,
+        "high_risk_count": 3,
+        "top_struggling_topics": ["SQL JOINs", "normalization"],
+        "soft_skills_summary": {
+            "autonomy": 3.2,
+            "time_management": 2.8,
+            "problem_solving": 3.5,
+            "communication": 4.0,
+            "teamwork": 4.1,
+        },
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "report": {
+    "report_title": "Clan Alpha — Performance Report",
+    "generated_date": "March 16, 2026",
+    "risk_level": "medium",
+    "summary": "Clan Alpha has 12 coders with an average score of 72.4/100. Three coders are classified as high risk, primarily struggling with SQL JOINs and normalization.",
+    "risks": "Low time management scores (2.8/5) suggest coders are not allocating adequate study time. Without intervention, the three at-risk coders may fall further behind.",
+    "recommendations": "Schedule focused SQL review sessions for the three high-risk coders. Introduce time-blocking techniques during stand-ups to improve time management.",
+    "action_items": [
+      "Schedule a 1:1 with each of the 3 high-risk coders this week.",
+      "Run a SQL JOINs workshop for the full clan.",
+      "Share normalization reference materials in the clan channel.",
+      "Review time management strategies in the next retrospective."
+    ]
+  }
+}
+```
+
+---
+
+## Generate a PDF report
+
+```
+GET /generate-pdf/{clan}
+```
+
+Generates and streams a PDF report for all coders in a clan. No AI is involved — the PDF is built from data fetched directly from `users`, `soft_skills_assessment`, and `moodle_progress`.
+
+### Path parameters
+
+<ParamField path="clan" type="string" required>
+  Clan identifier. Must match the `clan` column in the `users` table.
+</ParamField>
+
+### Response
+
+Returns a `application/pdf` stream with the header:
+
+```
+Content-Disposition: attachment; filename=clan_{clan}_report.pdf
+```
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `404`  | No coders found for the specified clan. |
+| `500`  | PDF generation failed. |

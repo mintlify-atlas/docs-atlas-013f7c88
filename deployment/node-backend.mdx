@@ -1,0 +1,170 @@
+---
+title: "Deploying the Node.js backend"
+description: "Deploy the Kairo API Gateway (Express.js) to production."
+---
+
+The Node.js backend is the Kairo API Gateway — it handles all browser traffic, user authentication, session management, business logic, and AI request proxying to the Python service.
+
+## Prerequisites
+
+- Node.js 18 or higher
+- npm
+- A PostgreSQL database (Supabase recommended — the same instance used for development works in production)
+- Google and GitHub OAuth apps configured with production callback URLs
+
+## Start commands
+
+<CodeGroup>
+
+```bash production
+npm start
+```
+
+```bash development
+npm run dev
+```
+
+</CodeGroup>
+
+- `npm start` runs `node src/server.js` — use this in production.
+- `npm run dev` runs `nodemon src/server.js` — use this locally for auto-reload on file changes.
+
+**Verification:** after startup, look for this line in your logs:
+
+```
+🚀 KAIRO API GATEWAY STARTED SUCCESSFULLY
+```
+
+## Environment variables
+
+Create a `.env` file in `backend-node/` with the following variables. In production, set these as environment variables in your hosting platform instead of committing a `.env` file.
+
+```env backend-node/.env
+# SERVER
+PORT=3000
+NODE_ENV=production
+
+# SECURITY & SESSIONS
+SESSION_SECRET=your_session_secret
+
+# DATABASE (POSTGRESQL — SUPABASE)
+DB_HOST=your_host
+DB_PORT=5432
+DB_NAME=your_name
+DB_USER=postgres.your_user
+DB_PASSWORD=your_password
+DATABASE_URL=your_database_url
+
+# SUPABASE
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_anon_key
+
+# FRONTEND CONNECTION
+# Must be the exact deployed origin, e.g. https://hecrodcode.github.io
+FRONTEND_URL=https://your-frontend-origin
+
+# PYTHON AI SERVICE
+PYTHON_API_URL=https://your-python-service-url
+
+# OAUTH — GITHUB
+GITHUB_CLIENT_ID=your_client
+GITHUB_CLIENT_SECRET=your_client_secret
+
+# OAUTH — GOOGLE
+GOOGLE_CLIENT_ID=your_client
+GOOGLE_CLIENT_SECRET=your_client_secret
+
+# SMTP (email OTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your_email
+SMTP_PASS=your_app_password
+SMTP_FROM="Kairo <your_email>"
+
+# AI API KEY
+RIWI_IA_KEY=your_ia_key
+```
+
+<Warning>
+  Use a long, random string for `SESSION_SECRET` in production. If this value is weak or leaked, attackers can forge session cookies and impersonate any user.
+</Warning>
+
+## OAuth callback URLs
+
+You must register the production callback URLs in both Google Cloud Console and your GitHub OAuth App settings before OAuth will work in production.
+
+| Provider | Callback URL |
+|----------|--------------|
+| GitHub | `https://your-node-service-url/api/auth/github/callback` |
+| Google | `https://your-node-service-url/api/auth/google/callback` |
+
+<Steps>
+  <Step title="GitHub OAuth App">
+    Go to **GitHub → Settings → Developer settings → OAuth Apps**. Update the **Authorization callback URL** to `https://your-node-service-url/api/auth/github/callback`.
+  </Step>
+  <Step title="Google Cloud Console">
+    Go to **Google Cloud Console → APIs & Services → Credentials**. Edit your OAuth 2.0 client and add `https://your-node-service-url/api/auth/google/callback` to the **Authorized redirect URIs** list.
+  </Step>
+</Steps>
+
+## Session storage
+
+Sessions are stored in PostgreSQL using `connect-pg-simple`. The `session` table is created automatically on first startup — no manual migration is needed. Sessions expire after 24 hours.
+
+Session cookie settings in production:
+
+- Name: `riwi.sid`
+- `httpOnly: true`
+- `secure: true` (HTTPS only)
+- `sameSite: none` (required for cross-origin requests from the static frontend)
+
+## Rate limiting
+
+`express-rate-limit` is configured on the Node.js server. The limits are applied globally — you do not need to configure anything additional for production.
+
+## Deployment to Railway
+
+<Steps>
+  <Step title="Connect your repository">
+    In the Railway dashboard, create a new service and connect your GitHub repository. Set the root directory to `backend-node`.
+  </Step>
+  <Step title="Set environment variables">
+    Add all variables from the table above in the Railway service's **Variables** panel.
+  </Step>
+  <Step title="Set the start command">
+    Railway will detect Node.js automatically. Confirm the start command is `npm start`.
+  </Step>
+  <Step title="Deploy">
+    Trigger a deployment. Watch the logs for `🚀 KAIRO API GATEWAY STARTED SUCCESSFULLY`.
+  </Step>
+</Steps>
+
+## Deployment to Render
+
+<Steps>
+  <Step title="Create a Web Service">
+    In Render, create a new **Web Service** and connect your repository. Set the root directory to `backend-node`.
+  </Step>
+  <Step title="Configure build and start commands">
+    - **Build command:** `npm install`
+    - **Start command:** `npm start`
+  </Step>
+  <Step title="Set environment variables">
+    Add all variables in the Render service's **Environment** tab.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="CORS errors in the browser">
+    Verify that `FRONTEND_URL` is set to the exact origin of your deployed frontend, with no trailing slash and no path. For example: `https://hecrodcode.github.io`, not `https://hecrodcode.github.io/` or `https://hecrodcode.github.io/frontend`.
+  </Accordion>
+  <Accordion title="OAuth callback mismatch">
+    The callback URL registered in Google Console or GitHub must exactly match the URL the OAuth provider redirects to. Double-check there is no `http` vs `https` mismatch.
+  </Accordion>
+  <Accordion title="Sessions not persisting">
+    Confirm `DATABASE_URL` (or the individual `DB_*` variables) is correct and the database is reachable from your host. The `connect-pg-simple` session store logs a warning if it cannot connect.
+  </Accordion>
+</AccordionGroup>

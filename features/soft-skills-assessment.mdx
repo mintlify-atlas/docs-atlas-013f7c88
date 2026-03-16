@@ -1,0 +1,134 @@
+---
+title: "Soft skills assessment"
+description: "The holistic intake survey that captures how coders learn, not just what they know."
+---
+
+The soft skills assessment is a 30-question onboarding diagnostic that every coder completes on first login. It measures five behavioral dimensions and detects your learning style — giving Kairo the data it needs to personalize every plan, card, and exercise it generates for you.
+
+## The five skill dimensions
+
+Each dimension is scored on a scale of **1 to 5**, stored in the `soft_skills_assessment` table:
+
+<CardGroup cols={2}>
+  <Card title="autonomy" icon="person-running">
+    How independently you work without needing guidance. Scores of 1–2 trigger risk detection logic.
+  </Card>
+  <Card title="time_management" icon="clock">
+    How well you plan and meet deadlines across a study week.
+  </Card>
+  <Card title="problem_solving" icon="lightbulb">
+    Your approach to debugging and working through unfamiliar challenges.
+  </Card>
+  <Card title="communication" icon="comments">
+    How clearly you ask for help, report blockers, and explain your thinking.
+  </Card>
+  <Card title="teamwork" icon="users">
+    How effectively you collaborate and give feedback in group settings.
+  </Card>
+</CardGroup>
+
+## Learning style options
+
+In addition to the five scores, the assessment identifies your learning style, stored in the `learning_style` column as one of four `learning_style_enum` values:
+
+| Value | Description |
+|-------|-------------|
+| `visual` | You learn best through diagrams, charts, and visual representations |
+| `auditory` | You retain information better through listening and verbal explanation |
+| `kinesthetic` | You prefer hands-on practice and learning by doing |
+| `mixed` | No strong single preference; you adapt to multiple formats |
+
+The AI uses your `learning_style` to adapt the phrasing of card theory sections, exercise descriptions, and plan activity instructions.
+
+## When the assessment is taken
+
+The assessment is triggered by the `first_login` flag on the `users` table:
+
+```sql
+CREATE TABLE users (
+  id          SERIAL PRIMARY KEY,
+  first_login BOOLEAN DEFAULT TRUE,
+  -- ...
+);
+```
+
+When `first_login = true`, you are redirected to the onboarding diagnostic at `views/coder/onboarding.html` before accessing any other part of the platform. After you complete and submit the survey, `first_login` is set to `false` and you proceed to the dashboard.
+
+<Warning>
+You cannot generate an AI learning plan until the soft skills assessment is complete. The Python service returns HTTP 400 with `"No diagnostic found for coder {id}. Complete onboarding first."` if `soft_skills_assessment` has no row for your `coder_id`.
+</Warning>
+
+## The onboarding diagnostic structure
+
+The survey has **30 questions** across 7 thematic blocks:
+
+| Block | Theme |
+|-------|-------|
+| B1 | Sensory channels (visual, auditory, reading, practice) |
+| B2 | Active vs. reflective (act first vs. think first) |
+| B3 | Concrete vs. intuitive (real examples vs. abstract ideas) |
+| B4 | Sequential vs. global (step-by-step vs. big picture first) |
+| B5 | Visual vs. verbal (diagrams vs. written descriptions) |
+| B6 | Experience cycle (how you process: experience, observe, analyze, experiment) |
+| B7 | Integrative profile (cross-cutting questions to finalize your profile) |
+
+Kairo scores your responses using three established learning frameworks: **VARK**, **Felder-Soloman**, and **Kolb**.
+
+## How the assessment is stored
+
+```sql
+CREATE TABLE soft_skills_assessment (
+  id              SERIAL PRIMARY KEY,
+  coder_id        INT NOT NULL UNIQUE,
+  autonomy        INT NOT NULL CHECK (autonomy BETWEEN 1 AND 5),
+  time_management INT NOT NULL CHECK (time_management BETWEEN 1 AND 5),
+  problem_solving INT NOT NULL CHECK (problem_solving BETWEEN 1 AND 5),
+  communication   INT NOT NULL CHECK (communication BETWEEN 1 AND 5),
+  teamwork        INT NOT NULL CHECK (teamwork BETWEEN 1 AND 5),
+  learning_style  learning_style_enum NOT NULL,
+  raw_answers     JSONB,           -- Full question-answer payload
+  assessed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+The `raw_answers` JSONB field stores the complete question-by-question responses so that the scoring logic can be audited or re-run if the algorithm changes.
+
+Submit and retrieve your assessment via the diagnostic routes:
+
+```bash
+# Submit assessment (coder only)
+POST /api/diagnostic
+
+# Retrieve your own assessment
+GET /api/diagnostic/me
+
+# Retrieve all assessments (TL only)
+GET /api/diagnostic/all
+```
+
+## How scores influence AI plan generation
+
+Every time the Python service builds a plan, it fetches your soft skills row first:
+
+- **`learning_style`** shapes the tone and format of activity descriptions and card theory text
+- **`problem_solving`** and **`autonomy`** influence the distribution of `guided`, `semi_guided`, and `autonomous` activity types across your plan
+- **`autonomy`** feeds directly into risk detection (see [Risk detection](/features/risk-detection))
+- **`targeted_soft_skill`** in the resulting plan identifies which of your five dimensions the plan specifically aims to strengthen
+
+## How TLs see assessment results
+
+Team Leaders see aggregated soft skill averages for their entire clan on the TL dashboard (via `GET /api/tl/dashboard`). The response includes a `softSkillsAverage` object with per-dimension clan averages:
+
+```json
+{
+  "softSkillsAverage": {
+    "autonomy": 3.2,
+    "time_management": 3.7,
+    "problem_solving": 3.1,
+    "communication": 3.5,
+    "teamwork": 3.8
+  }
+}
+```
+
+TLs can also view individual coder assessments in the coder detail panel by selecting any coder row in the clan table, which shows per-skill bars for all five dimensions plus the learning style.

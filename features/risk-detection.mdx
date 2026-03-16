@@ -1,0 +1,140 @@
+---
+title: "Risk detection"
+description: "How Kairo automatically identifies at-risk coders and alerts Team Leaders."
+---
+
+Kairo's risk detection system continuously evaluates coder performance data and flags individuals who need early intervention. Flags surface on the TL dashboard immediately, so Team Leaders can act before a coder falls significantly behind.
+
+## The `risk_flags` table
+
+Every risk alert — whether auto-detected or manually created by a TL — is stored in `risk_flags`:
+
+```sql
+CREATE TABLE risk_flags (
+  id            SERIAL PRIMARY KEY,
+  coder_id      INT NOT NULL,
+  risk_level    risk_level_enum NOT NULL,  -- 'low' | 'medium' | 'high'
+  reason        TEXT NOT NULL,             -- Human-readable explanation
+  auto_detected BOOLEAN DEFAULT TRUE,      -- true = system-generated
+  detected_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved      BOOLEAN DEFAULT FALSE,
+  resolved_at   TIMESTAMP NULL,
+  FOREIGN KEY (coder_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+## Risk calculation logic
+
+The `v_coder_risk_analysis` view computes a `calculated_risk_level` for every coder based on two signals: their `autonomy` soft skill score and their `average_score` from Moodle:
+
+```sql
+CASE
+  WHEN ssa.autonomy <= 2 AND mp.average_score < 70 THEN 'high'
+  WHEN ssa.autonomy <= 2 OR  mp.average_score < 70 THEN 'medium'
+  ELSE 'low'
+END AS calculated_risk_level
+```
+
+<CardGroup cols={3}>
+  <Card title="HIGH risk" icon="triangle-exclamation">
+    `autonomy <= 2` **AND** `average_score < 70`. Both signals are present simultaneously — the coder is struggling academically and shows low self-direction.
+  </Card>
+  <Card title="MEDIUM risk" icon="circle-exclamation">
+    `autonomy <= 2` **OR** `average_score < 70`. One signal is present — the coder is at risk on one dimension.
+  </Card>
+  <Card title="LOW risk" icon="circle-check">
+    Neither condition is met. The coder's autonomy score is 3 or above and their Moodle average is 70 or above.
+  </Card>
+</CardGroup>
+
+<Warning>
+The `risk_level_enum` in the schema defines three values: `low`, `medium`, `high`. The TL controller also handles a `critical` tier in its ordering logic for forward compatibility, but `critical` is not currently written to `risk_flags` by the auto-detection system.
+</Warning>
+
+## Auto-detection vs. manual flagging
+
+The `auto_detected` boolean distinguishes how a flag was created:
+
+| Value | Source | Description |
+|-------|--------|-------------|
+| `true` | System | Created automatically when the risk calculation logic detects a threshold breach |
+| `false` | TL | Created manually by a Team Leader who observed a concern not captured by the scoring rules |
+
+Manual flags allow TLs to record qualitative concerns — for example, a coder who stops attending sessions or communicates distress — that don't show up in score data.
+
+## How TLs see risk alerts
+
+Risk information appears in multiple places on the TL dashboard:
+
+- **Stats row** — the "At risk" card shows the count of coders with `risk_level IN ('high', 'critical')` and `resolved = false`
+- **Risk badge** — a topbar badge displays the at-risk count when it is greater than zero
+- **Coder table** — each row shows the coder's `risk_level`. The table is ordered so `critical` and `high` rows appear first
+- **Coder detail panel** — selecting a coder shows a `⚠ En riesgo` badge if they have an unresolved flag
+- **Risk flags endpoint** — `GET /api/tl/risk-flags` returns all unresolved flags across the clan with coder name and email
+
+## Resolving risk flags
+
+When a coder's situation improves, their flag can be marked resolved. The `resolved` boolean and `resolved_at` timestamp track when the intervention concluded:
+
+```sql
+-- A resolved flag no longer appears in dashboard risk counts
+SELECT * FROM risk_flags WHERE coder_id = 42 AND resolved = false;
+```
+
+All dashboard queries that aggregate risk counts use `WHERE rf.resolved = false`, so resolved flags are excluded automatically.
+
+## AI reports for at-risk coders
+
+When a TL needs a detailed written analysis, they can trigger an AI report for their entire clan:
+
+```bash
+POST /generate-report
+Content-Type: application/json
+
+{
+  "clan": "Turing",
+  "tl_id": 7,
+  "total_coders": 12,
+  "average_score": 68.4,
+  "high_risk_count": 3,
+  "top_struggling_topics": ["SQL JOINs", "Subqueries"],
+  "soft_skills_summary": { "autonomy": 2.8, "problem_solving": 3.1 }
+}
+```
+
+The Groq LLM (`llama-3.3-70b-versatile`) generates a structured JSON report with four fields: `summary`, `risks`, `recommendations`, and `action_items`. The report is saved to `ai_reports` with `target_type = 'clan'` and `viewed_by_tl = false` until you open it:
+
+```json
+{
+  "report_title": "Clan Turing — Performance Report",
+  "generated_date": "March 14, 2026",
+  "risk_level": "high",
+  "summary": "Clan Turing has 3 coders below the 70-point threshold...",
+  "risks": "Low autonomy scores combined with weak performance on JOIN topics...",
+  "recommendations": "Schedule individual sync sessions with the 3 high-risk coders...",
+  "action_items": [
+    "Assign extra SQL JOIN exercises to coders below 70",
+    "Run a guided session on subqueries this week",
+    "Check in daily with coders flagged as high risk"
+  ]
+}
+```
+
+## Early intervention in practice
+
+The recommended workflow when a flag appears:
+
+<Steps>
+  <Step title="Review the flag on the dashboard">
+    Open the TL dashboard. High-risk coders appear at the top of the clan table. Click a coder row to see their skill bars, score, and current week.
+  </Step>
+  <Step title="Send targeted feedback">
+    Use the feedback panel to send a `POST /api/tl/feedback` message. Choose `feedback_type: "general"` for motivational messages or `"activity"` if the concern is tied to a specific exercise.
+  </Step>
+  <Step title="Generate an AI report">
+    If the pattern is clan-wide, call `POST /generate-report` to get structured analysis and action items from the AI. Download a full coder-by-coder PDF via `GET /generate-pdf/{clan}`.
+  </Step>
+  <Step title="Resolve the flag">
+    Once the coder's metrics recover above the thresholds (`autonomy > 2` and `average_score >= 70`), mark their flag as resolved by setting `resolved = true` and recording `resolved_at`.
+  </Step>
+</Steps>

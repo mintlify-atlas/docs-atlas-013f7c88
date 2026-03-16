@@ -1,0 +1,140 @@
+---
+title: 'Activities'
+description: 'Track progress on learning plan activities and submit evidence.'
+---
+
+Activity endpoints let coders mark individual plan activities as complete and dismiss TL feedback notifications.
+
+---
+
+## Mark an activity as complete
+
+```
+PATCH /api/coder/activities/:id/complete
+```
+
+Upserts an `activity_progress` record for the given activity, setting `completed = true`. If a record already exists (e.g., from a previous day-complete call), it updates the reflection text and time spent.
+
+<Tip>
+  Completing individual activities does not award Kairo points. Points are awarded when you complete a full day via `POST /api/coder/plan/:planId/day/:day/complete`.
+</Tip>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The `plan_activities` record ID.
+</ParamField>
+
+### Request body
+
+<ParamField body="reflectionText" type="string">
+  Optional free-text reflection on the activity.
+</ParamField>
+
+<ParamField body="timeSpent" type="integer">
+  Time spent on the activity in minutes.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+<ResponseField name="data" type="object">
+  The upserted `activity_progress` record.
+  <Expandable title="properties">
+    <ResponseField name="id" type="integer">Progress record ID.</ResponseField>
+    <ResponseField name="activity_id" type="integer">The activity that was completed.</ResponseField>
+    <ResponseField name="coder_id" type="integer">The coder who completed it.</ResponseField>
+    <ResponseField name="completed" type="boolean">Always `true` after this call.</ResponseField>
+    <ResponseField name="reflection_text" type="string | null">Stored reflection text.</ResponseField>
+    <ResponseField name="time_spent_minutes" type="integer | null">Stored time in minutes.</ResponseField>
+    <ResponseField name="completed_at" type="string">ISO 8601 timestamp of completion.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `500`  | Failed to update activity progress. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request PATCH \
+  --url http://localhost:3000/api/coder/activities/101/complete \
+  --header 'Content-Type: application/json' \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --data '{
+    "reflectionText": "Practiqué JOINs con tablas reales del proyecto.",
+    "timeSpent": 45
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "data": {
+    "id": 210,
+    "activity_id": 101,
+    "coder_id": 42,
+    "completed": true,
+    "reflection_text": "Practiqué JOINs con tablas reales del proyecto.",
+    "time_spent_minutes": 45,
+    "completed_at": "2026-03-14T11:30:00.000Z"
+  }
+}
+```
+
+---
+
+## Mark feedback as read
+
+```
+PATCH /api/coder/feedback/:id/read
+```
+
+Marks a TL feedback message as read (`is_read = true`). This clears the notification bell indicator for that item. A real-time notification is sent to the TL to confirm the coder has seen their message.
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The `tl_feedback` record ID.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">Confirmation string.</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `404`  | Feedback record not found or does not belong to the authenticated coder. |
+| `500`  | Failed to mark feedback as read. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request PATCH \
+  --url http://localhost:3000/api/coder/feedback/34/read \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "message": "Feedback marked as read"
+}
+```

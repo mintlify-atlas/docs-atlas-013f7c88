@@ -1,0 +1,103 @@
+---
+title: 'Register'
+description: 'Create a new user account and trigger email OTP verification.'
+---
+
+Registers a new user account and sends a one-time password (OTP) to the provided email address via SMTP. The user must verify the OTP before they can log in.
+
+<Note>
+  A session is **not** created at registration. After registering, call [POST /api/auth/verify-otp](/api/auth/otp-verification) to verify the OTP and establish a session.
+</Note>
+
+## Register
+
+<ParamField body="email" type="string" required>
+  The user's email address. Must be unique across all verified accounts.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Hashed with bcrypt (12 rounds) before storage.
+</ParamField>
+
+<ParamField body="full_name" type="string" required>
+  The user's display name. Used in OTP emails and throughout the platform.
+</ParamField>
+
+<ParamField body="role" type="string" default="coder">
+  Account role. Accepted values: `coder`, `tl`. Defaults to `coder` if omitted.
+</ParamField>
+
+<ParamField body="clan_id" type="string">
+  The clan the coder belongs to. Optional. Only relevant for users with role `coder`.
+</ParamField>
+
+### Response — 201 Created
+
+<ResponseField name="message" type="string">
+  Confirmation that the verification code was sent (e.g. `"Verification code sent."`).
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The email address the OTP was sent to.
+</ResponseField>
+
+<ResponseField name="ttl" type="number">
+  OTP validity window in seconds (900 = 15 minutes).
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `400`  | Missing or invalid request fields. |
+| `409`  | An account with this email already exists and has been verified. |
+| `500`  | Internal server error during registration. |
+
+<Warning>
+  If you receive a `409` the email is already in use by a verified account. Use [POST /api/auth/login](/api/auth/login) instead.
+</Warning>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/auth/register \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "email": "alex@example.com",
+    "password": "s3cur3P@ss!",
+    "full_name": "Alex Rivera",
+    "role": "coder",
+    "clan_id": "clan_42"
+  }'
+```
+
+</CodeGroup>
+
+```json 201
+{
+  "message": "Verification code sent.",
+  "email": "alex@example.com",
+  "ttl": 900
+}
+```
+
+```json 409
+{
+  "error": "Email already registered."
+}
+```
+
+## What happens next
+
+After a successful `201` response:
+
+1. An OTP is delivered to the user's inbox.
+2. The user submits the code to [POST /api/auth/verify-otp](/api/auth/otp-verification).
+3. On successful verification, a session is created and the user can access protected routes.
+
+<Tip>
+  If the user does not receive the email, they can request a new code via [POST /api/auth/resend-otp](/api/auth/otp-verification#resend-otp).
+</Tip>

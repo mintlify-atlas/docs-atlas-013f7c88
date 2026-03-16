@@ -1,0 +1,75 @@
+---
+title: "Introduction"
+description: "Kairo is an AI-powered personalized learning platform that bridges the gap between intensive bootcamp pacing and individual learning needs."
+---
+
+## What is Kairo?
+
+Kairo is an intelligent learning ecosystem built for the Riwi bootcamp program. It analyzes each student's academic performance and soft skills to generate dynamic, personalized 4-week growth paths — ensuring no coder gets left behind.
+
+The platform serves two types of users:
+
+- **Coders** — Bootcamp students who receive personalized AI-generated study plans, interactive exercises, and feedback from their Team Leader
+- **Team Leaders (TLs)** — Mentors who use analytics dashboards and AI-generated reports to proactively identify and support at-risk students
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/getting-started/quickstart">
+    Set up the full Kairo stack in under 15 minutes
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the hybrid Node.js + Python AI system
+  </Card>
+  <Card title="Coder Guide" icon="graduation-cap" href="/roles/coder">
+    Learn how coders use Kairo to accelerate their growth
+  </Card>
+  <Card title="Team Leader Guide" icon="users" href="/roles/team-leader">
+    Discover the TL analytics and mentorship tools
+  </Card>
+</CardGroup>
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="AI Learning Plans" icon="brain" href="/features/ai-learning-plans">
+    Personalized 4-week study plans generated from Moodle scores and soft skills assessments
+  </Card>
+  <Card title="Focus Cards" icon="cards-blank" href="/features/ai-learning-plans">
+    Six prioritized topic cards (2 high, 2 medium, 2 low) surfacing exactly where each coder needs help
+  </Card>
+  <Card title="AI Chat Tutor" icon="message-bot" href="/features/ai-chat">
+    On-demand AI assistant that answers questions in the context of the coder's active learning plan
+  </Card>
+  <Card title="Risk Detection" icon="triangle-exclamation" href="/features/risk-detection">
+    Automatic risk flags when scores drop or soft skills signals indicate a student is struggling
+  </Card>
+  <Card title="Soft Skills Assessment" icon="chart-radar" href="/features/soft-skills-assessment">
+    Holistic intake survey measuring autonomy, time management, communication, and learning style
+  </Card>
+  <Card title="TL Analytics Dashboard" icon="chart-line" href="/features/tl-dashboard">
+    Clan-level performance rankings, evidence review, and AI-generated reports for Team Leaders
+  </Card>
+</CardGroup>
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| API Gateway | Node.js + Express 5 |
+| AI Microservice | Python 3 + FastAPI |
+| LLM | Groq (llama-3.3-70b-versatile / Qwen2.5-7B-Instruct) |
+| AI Orchestration | LangChain |
+| Database | PostgreSQL 14+ via Supabase |
+| Frontend | Vanilla JS + Bootstrap 5 |
+| Auth | Session-based + Passport (Google, GitHub OAuth) |
+
+## Architecture overview
+
+Kairo uses a **hybrid two-backend** architecture:
+
+1. **Node.js (Port 3000)** acts as the system orchestrator — managing user sessions, authentication, business logic, and proxying AI requests to the Python service.
+2. **Python/FastAPI (Port 8000)** acts as the AI brain — processing learning data through the LLM and returning structured JSON plans, exercises, and reports.
+3. **Frontend (Port 5500)** is a static multi-page application (MPA) with separate views for coders and Team Leaders.
+
+<Info>
+  Both backend services must be running simultaneously for Kairo to work. The Node.js service communicates with the Python service internally via `PYTHON_API_URL`.
+</Info>

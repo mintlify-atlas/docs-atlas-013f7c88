@@ -1,0 +1,221 @@
+---
+title: "Search resources"
+description: "Semantic and text-based search through uploaded resources for a coder's clan and module."
+---
+
+Searches uploaded learning resources relevant to a given topic and clan. The service first attempts a text-based search against the `resources` table, then falls back to returning any available resources for the module if no text matches are found.
+
+<Info>
+  This is an **internal endpoint** called by the Node.js backend at `POST /api/coder/resources/search`. It is not intended to be called directly from the frontend.
+</Info>
+
+<Note>
+  The embedding model (`all-MiniLM-L6-v2`, 384-dimensional vectors) is loaded at startup. PDFs are indexed using `pdfplumber`. If the embedding model is unavailable, the service falls back to text-based search only.
+</Note>
+
+**Base URL:** `http://localhost:8000`
+
+---
+
+## Search resources
+
+```
+POST /search-resources
+```
+
+Returns up to `limit` resources matching the topic for the specified clan and optional module. If `topic` or `clan_id` is empty, the endpoint returns an empty result set immediately.
+
+### Request body
+
+<ParamField body="topic" type="string" required>
+  Natural language query or topic name to search for (e.g. `"SQL JOINs"`, `"normalization"`).
+</ParamField>
+
+<ParamField body="clan_id" type="string" required>
+  Clan identifier. Resources are scoped per clan.
+</ParamField>
+
+<ParamField body="module_id" type="integer">
+  Optional module ID. When provided, limits results to resources linked to this module. Also used for the fallback query when no text matches are found.
+</ParamField>
+
+<ParamField body="limit" type="integer" default="3">
+  Maximum number of resources to return.
+</ParamField>
+
+<ParamField body="coder_id" type="integer">
+  Optional coder database ID. Included for logging purposes and does not affect results.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  Always `true`. An empty `resources` array is returned when no matches are found, not an error.
+</ResponseField>
+
+<ResponseField name="resources" type="object[]">
+  Array of matching resource objects. Empty when no results are found.
+  <Expandable title="resource properties">
+    <ResponseField name="id" type="integer">Resource database ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="description" type="string">Short description of the resource.</ResponseField>
+    <ResponseField name="url" type="string">Link to the resource (URL or file path).</ResponseField>
+    <ResponseField name="resource_type" type="string">Type of resource, e.g. `pdf`, `video`, `link`.</ResponseField>
+    <ResponseField name="module_id" type="integer">Module this resource belongs to.</ResponseField>
+    <ResponseField name="clan_id" type="string">Clan this resource belongs to.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/search-resources \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "topic": "SQL JOINs",
+    "clan_id": "Alpha",
+    "module_id": 4,
+    "limit": 3
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/search-resources",
+    json={
+        "topic": "SQL JOINs",
+        "clan_id": "Alpha",
+        "module_id": 4,
+        "limit": 3,
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "resources": [
+    {
+      "id": 12,
+      "title": "Guía de SQL JOINs",
+      "description": "Explica INNER, LEFT, RIGHT y FULL JOIN con ejemplos prácticos.",
+      "url": "https://example.com/sql-joins.pdf",
+      "resource_type": "pdf",
+      "module_id": 4,
+      "clan_id": "Alpha"
+    },
+    {
+      "id": 15,
+      "title": "Relaciones entre tablas",
+      "description": "Video tutorial sobre claves foráneas y relaciones.",
+      "url": "https://example.com/relations.mp4",
+      "resource_type": "video",
+      "module_id": 4,
+      "clan_id": "Alpha"
+    }
+  ]
+}
+```
+
+```json 200 (no matches)
+{
+  "success": true,
+  "resources": []
+}
+```
+
+---
+
+## Health check
+
+```
+GET /health
+```
+
+Returns the current service status. Called by the Node.js backend at `GET /api/ai/health` and used by the Railway health check probe.
+
+### Response — 200 OK
+
+<ResponseField name="status" type="string">`online` when the service is running.</ResponseField>
+<ResponseField name="service" type="string">Service identifier: `"Kairo AI Engine"`.</ResponseField>
+<ResponseField name="version" type="string">Service version, e.g. `"2.3.0"`.</ResponseField>
+<ResponseField name="model" type="string">Active LLM model name from the `MODEL_NAME` environment variable.</ResponseField>
+<ResponseField name="embeddings" type="string">`"all-MiniLM-L6-v2 (384d)"` when the embedding model loaded successfully; `"unavailable"` otherwise.</ResponseField>
+<ResponseField name="environment" type="string">Current environment from the `ENV` variable (e.g. `"development"`, `"production"`).</ResponseField>
+<ResponseField name="endpoints" type="string[]">List of all registered AI service endpoints.</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:8000/health
+```
+
+```python Python
+import requests
+
+response = requests.get("http://localhost:8000/health")
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "status": "online",
+  "service": "Kairo AI Engine",
+  "version": "2.3.0",
+  "model": "llama-3.3-70b-versatile",
+  "embeddings": "all-MiniLM-L6-v2 (384d)",
+  "environment": "development",
+  "endpoints": [
+    "POST /generate-plan",
+    "POST /generate-focus-cards",
+    "POST /chat/ask",
+    "POST /generate-report",
+    "POST /generate-exercise",
+    "POST /exercise/{id}/submit",
+    "POST /search-resources"
+  ]
+}
+```
+
+---
+
+## Root
+
+```
+GET /
+```
+
+Root endpoint confirming the service is online.
+
+### Response — 200 OK
+
+<ResponseField name="message" type="string">Status message: `"Kairo AI Microservice — online"`.</ResponseField>
+<ResponseField name="docs" type="string">Path to the interactive FastAPI docs: `"/docs"`.</ResponseField>
+<ResponseField name="version" type="string">Service version.</ResponseField>
+
+### Example
+
+```bash cURL
+curl --request GET --url http://localhost:8000/
+```
+
+```json 200
+{
+  "message": "Kairo AI Microservice — online",
+  "docs": "/docs",
+  "version": "2.3.0"
+}
+```

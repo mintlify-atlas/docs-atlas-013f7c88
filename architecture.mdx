@@ -1,0 +1,175 @@
+---
+title: "Architecture"
+description: "Kairo's hybrid Node.js + Python AI architecture and how the components work together."
+---
+
+Kairo is built as a distributed system with three independent processes that communicate over HTTP. The Node.js API Gateway handles all client-facing traffic, the Python AI microservice processes learning data and generates plans, and the frontend is a static multi-page application served separately.
+
+## System components
+
+<CardGroup cols={3}>
+  <Card title="API Gateway" icon="server" href="/getting-started/quickstart">
+    Node.js + Express 5 on port 3000. Manages authentication, sessions, business logic, and proxies AI requests to the Python service.
+  </Card>
+  <Card title="AI Microservice" icon="brain" href="/api/ai/generate-plan">
+    Python + FastAPI on port 8000. Runs LLM inference via Groq, generates learning plans, exercises, focus cards, and TL reports.
+  </Card>
+  <Card title="Frontend" icon="browser" href="/roles/coder">
+    Vanilla JS + Bootstrap 5 on port 5500. Separate views for Coders and Team Leaders, served via VS Code Live Server or any static file server.
+  </Card>
+</CardGroup>
+
+## Tech stack
+
+| Layer | Technology | Version |
+|---|---|---|
+| API Gateway | Node.js + Express | Express 5.x |
+| AI Microservice | Python + FastAPI | FastAPI 0.115 |
+| LLM Provider | Groq (`llama-3.3-70b-versatile`) | groq 1.1.1 |
+| AI Orchestration | LangChain | — |
+| Embeddings | `all-MiniLM-L6-v2` (384d) | sentence-transformers |
+| Database | PostgreSQL 14+ via Supabase | supabase-js 2.x |
+| Frontend | Vanilla JS + Bootstrap 5 | — |
+| Auth | express-session + Passport OAuth | passport 0.7.0 |
+| Session Store | connect-pg-simple (PostgreSQL) | 10.x |
+| Rate Limiting | express-rate-limit | 8.x |
+
+## Three-process model
+
+All three processes must run simultaneously. The Node.js orchestrator is the only process exposed to the browser; the Python service runs as an internal microservice.
+
+```
+Browser
+  │
+  ▼  HTTP (port 5500)
+[Frontend — Static MPA]
+  │
+  ▼  HTTP (port 3000)
+[Node.js API Gateway]  ──internal──▶  [Python AI Service]
+  │                                        (port 8000)
+  ▼  PostgreSQL (Supabase)
+[Database]
+```
+
+<Note>
+The frontend communicates exclusively with the Node.js API Gateway. It never calls the Python service directly. CORS on Node.js is configured to allow requests only from the origin defined in `FRONTEND_URL`.
+</Note>
+
+## How Node.js proxies AI requests
+
+The Node.js server mounts an AI router at `/api/ai`. When a coder requests a learning plan, the route handler collects the coder's Moodle progress and soft skills data from PostgreSQL, then forwards the payload to the Python service via an internal HTTP call to `PYTHON_API_URL` (default: `http://localhost:8000`).
+
+The Python service returns structured JSON, which Node.js saves to the `complementary_plans` table and returns to the client. This pattern keeps all authentication and data access logic inside Node.js while delegating LLM calls to the Python specialist service.
+
+AI routes proxied through Node.js:
+
+| Node.js route | Python endpoint |
+|---|---|
+| `POST /api/ai/generate-plan` | `POST /generate-plan` |
+| `POST /api/ai/focus-cards` | `POST /generate-focus-cards` |
+| `POST /api/ai/chat` | `POST /chat/ask` |
+| `POST /api/ai/reports` | `POST /generate-report` |
+| `POST /api/ai/generate-exercise` | `POST /generate-exercise` |
+| `POST /api/ai/exercise/:id/submit` | `POST /exercise/{id}/submit` |
+| `POST /api/ai/search-resources` | `POST /search-resources` |
+| `GET /api/ai/health` | `GET /health` |
+
+## Database layer
+
+Kairo uses PostgreSQL 14+ hosted on Supabase. The Node.js backend connects via the `pg` driver using `DATABASE_URL`, and also uses the `@supabase/supabase-js` client for Supabase-specific features. The Python service connects to Supabase using `SUPABASE_SERVICE_KEY` (the service role key, which bypasses RLS).
+
+### Key tables
+
+| Table | Purpose |
+|---|---|
+| `users` | All platform users — coders (role `coder`) and Team Leaders (role `tl`). Includes `clan_id` for filtering by clan (Turing, Tesla, McCarthy). |
+| `soft_skills_assessment` | One row per coder. Stores scores for autonomy, time management, problem solving, communication, and teamwork (1–5), plus `learning_style`. |
+| `moodle_progress` | Academic progress per coder per module. Tracks current week, completed weeks, struggling topics, and `average_score`. |
+| `complementary_plans` | The six AI-generated focus cards per coder. Each has a `priority_level` (high/medium/low), plan content as JSONB, and snapshots of the inputs used at generation time. |
+| `plan_activities` | Individual daily activities within each plan. Includes `day_number`, `activity_type` (guided/semi_guided/autonomous), and `skill_focus`. |
+| `activity_progress` | Tracks which activities each coder has completed, with optional reflection text and time spent. |
+| `evidence_submissions` | Files and links uploaded by coders as evidence for completed activities. |
+| `tl_feedback` | Messages from Team Leaders to coders. `is_read = false` triggers the notification bell indicator. |
+| `risk_flags` | Automatic and manual risk alerts per coder with `risk_level` (low/medium/high). |
+| `ai_reports` | AI-generated executive reports for Team Leaders scoped to a coder, clan, or cohort. |
+| `ai_generation_log` | Full audit log of every LLM call: input/output payloads, model name, execution time, and success status. |
+| `modules` | Bootcamp modules (Backend, Frontend, etc.) with total week counts. |
+| `topics` | Individual topics within each module. |
+| `coder_struggling_topics` | Many-to-many join linking coders to topics they have flagged as difficult. |
+
+### Database views
+
+- **`v_coder_dashboard`** — Aggregates a coder's soft skills scores, current module, Moodle average, and activity completion percentage into a single row for efficient dashboard queries.
+- **`v_coder_risk_analysis`** — Combines soft skills signals and academic scores to compute a `calculated_risk_level` for each coder, used by the TL analytics dashboard.
+
+## Authentication flow
+
+Kairo uses session-based authentication backed by PostgreSQL (via `connect-pg-simple`). Sessions are stored in a `session` table created automatically on first start.
+
+**Email/password flow:**
+1. User submits credentials to `POST /api/auth`.
+2. Node.js verifies the password hash (bcrypt) against the `users` table.
+3. On success, a session is created and a `riwi.sid` cookie is set (`httpOnly`, `sameSite: none` in production, `secure` in production).
+
+**OAuth flow (GitHub, Google):**
+1. User initiates OAuth via Passport strategies (`passport-github2`, `passport-google-oauth20`).
+2. After the provider callback, Passport upserts the user in `users` and serializes their ID into the session.
+3. The session cookie is issued identically to the email/password flow.
+
+**Session cookie settings:**
+- Cookie name: `riwi.sid`
+- Max age: 24 hours
+- `secure` and `sameSite: none` in production; `sameSite: lax` in development
+
+## CORS configuration
+
+CORS is enforced at the Node.js layer. In production, only the exact origin from `FRONTEND_URL` is allowed. In development, `http://localhost:5500` and `http://localhost:5173` are permitted.
+
+<Warning>
+`FRONTEND_URL` must exactly match the origin where the frontend is hosted. If it does not match — even by a trailing slash or `http` vs `https` — the browser will block all API requests.
+</Warning>
+
+The Python service manages its own CORS independently. It always allows the local dev origins and adds any origins from `NODE_URL` and `FRONTEND_URL` at startup, including both `http` and `https` variants.
+
+Allowed methods on Node.js: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`.  
+Allowed methods on Python: `GET`, `POST`, `DELETE`, `OPTIONS`.
+
+Both services set `credentials: true` to support cookie-based auth.
+
+## Config modules (backend-node)
+
+The Node.js `src/config/` directory contains four modules:
+
+| File | Purpose |
+|---|---|
+| `database.js` | Creates and exports a `pg.Pool` instance using `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`. Exports `testConnection()` called at startup. |
+| `supabase.js` | Initializes the Supabase JS client using `SUPABASE_URL` and `SUPABASE_ANON_KEY`. |
+| `passport.js` | Configures GitHub and Google OAuth strategies and session serialization/deserialization. |
+| `mongodb.js` | Connects to MongoDB (used for supplementary data). Called via `connectMongo()` at startup. |
+
+## Key data flows
+
+### Onboarding → assessment
+
+1. New coder registers and logs in for the first time (`first_login = true` in `users`).
+2. The frontend redirects to the soft skills assessment form.
+3. Coder submits scores; Node.js writes one row to `soft_skills_assessment`.
+4. `first_login` is set to `false`.
+
+### Assessment → plan generation
+
+1. Node.js reads the coder's `soft_skills_assessment` and `moodle_progress` records.
+2. The data is forwarded to `POST /generate-plan` on the Python service.
+3. Python runs the prompt through the Groq LLM and returns a structured JSON plan.
+4. Node.js writes six rows to `complementary_plans` (2 high, 2 medium, 2 low priority).
+5. The `ai_generation_log` table records the full input/output payload and execution time.
+
+### Activity tracking → TL review
+
+1. Coder marks activities complete in `activity_progress` and optionally uploads evidence to `evidence_submissions`.
+2. The `v_coder_dashboard` view aggregates completion percentages in real time.
+3. The risk engine evaluates `average_score` and `autonomy` thresholds; if breached, it inserts a row into `risk_flags`.
+4. The TL opens the analytics dashboard, which queries `v_coder_risk_analysis` to surface at-risk coders.
+5. The TL requests an AI report (`POST /api/ai/reports`), which is stored in `ai_reports`.
+6. The TL sends feedback via `POST /api/tl/feedback`, creating a row in `tl_feedback` with `is_read = false`.
+7. The coder sees the notification bell indicator and reads the message, which sets `is_read = true`.

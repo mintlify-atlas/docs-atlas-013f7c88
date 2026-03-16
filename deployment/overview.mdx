@@ -1,0 +1,110 @@
+---
+title: "Deployment overview"
+description: "Architecture and strategy for deploying Kairo's three services to production."
+---
+
+Kairo is a distributed system with three independently deployable services. Each service runs in its own process and communicates with the others over HTTP. Deploy them in order: both backends first, then the frontend.
+
+## The three services
+
+<CardGroup cols={3}>
+  <Card title="Node.js API Gateway" icon="server" href="/deployment/node-backend">
+    Express 5 server. Handles all client traffic, authentication, business logic, and AI request proxying. Deploy to Railway, Render, or any Node-capable host.
+  </Card>
+  <Card title="Python AI microservice" icon="brain" href="/deployment/python-ai-service">
+    FastAPI server. Runs LLM inference via Groq and powers all AI features. Deploy to Railway (nixpacks) or Render.
+  </Card>
+  <Card title="Frontend" icon="browser" href="/deployment/frontend">
+    Static multi-page application. No build step required. Deploy to GitHub Pages, Vercel, or Netlify.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Both backends must be fully deployed and their URLs known before you configure and deploy the frontend. The frontend's API calls will fail until `FRONTEND_URL` in each backend matches the deployed frontend origin exactly.
+</Warning>
+
+## Deployment order
+
+<Steps>
+  <Step title="Deploy the Node.js backend">
+    Deploy the Express server and note its public URL (e.g., `https://kairo-api.up.railway.app`). See [Deploying the Node.js backend](/deployment/node-backend).
+  </Step>
+  <Step title="Deploy the Python AI service">
+    Deploy the FastAPI server and note its public URL (e.g., `https://kairo-ai.up.railway.app`). See [Deploying the Python AI service](/deployment/python-ai-service).
+  </Step>
+  <Step title="Configure inter-service URLs">
+    Set `PYTHON_API_URL` on the Node.js service to the Python service URL. Set `NODE_URL` on the Python service to the Node.js URL.
+  </Step>
+  <Step title="Deploy the frontend">
+    Push the frontend to your static host and note the deployed URL. See [Deploying the frontend](/deployment/frontend).
+  </Step>
+  <Step title="Set FRONTEND_URL on both backends">
+    Update `FRONTEND_URL` on the Node.js service and `FRONTEND_URL` on the Python service to match the deployed frontend origin exactly. Redeploy both backends.
+  </Step>
+</Steps>
+
+## Environment configuration
+
+Each service reads its configuration from environment variables. Never commit `.env` files to version control.
+
+### Development vs. production
+
+| Variable | Development | Production |
+|----------|-------------|------------|
+| `NODE_ENV` | `development` | `production` |
+| `ENV` | `development` | `production` |
+| `FRONTEND_URL` (Node.js) | `http://127.0.0.1:5500/frontend` | Your deployed frontend URL |
+| `FRONTEND_URL` (Python) | `http://localhost:5500` | Your deployed frontend URL |
+| `PYTHON_API_URL` | `http://localhost:8000` | Your deployed Python service URL |
+| `NODE_URL` | `http://localhost:3000` | Your deployed Node.js service URL |
+
+## CORS configuration
+
+Both backends enforce CORS independently.
+
+**Node.js** allows requests only from the origin set in `FRONTEND_URL`. In production, set this to the exact origin of your deployed frontend — for example, `https://hecrodcode.github.io` with no trailing slash and no path.
+
+**Python** builds its allowed origins list at startup from `NODE_URL` and `FRONTEND_URL`, and also includes both `http` and `https` variants of each URL to handle misconfiguration gracefully.
+
+<Warning>
+  `FRONTEND_URL` must be the exact origin of the deployed frontend. A trailing slash, a wrong protocol (`http` vs `https`), or an extra path segment will cause the browser to block all API requests with a CORS error.
+</Warning>
+
+## Inter-service communication
+
+```
+Browser
+  │
+  ▼  HTTPS (frontend origin)
+[Static Frontend — GitHub Pages / Vercel / Netlify]
+  │
+  ▼  HTTPS (Node.js production URL)
+[Node.js API Gateway]  ──internal──▶  [Python AI Service]
+  │                                   (Python production URL)
+  ▼  PostgreSQL (Supabase)
+[Database]
+```
+
+The Node.js service calls the Python service using `PYTHON_API_URL`. The Python service calls back to Node.js using `NODE_URL` (for CORS allow-listing). The browser never communicates with the Python service directly.
+
+## Database
+
+Kairo uses a single PostgreSQL database hosted on Supabase. The same database works for both development and production — you do not need a separate production database unless you want environment isolation.
+
+- **Node.js** connects using `DATABASE_URL` (or individual `DB_*` variables) and the `@supabase/supabase-js` client.
+- **Python** connects using `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (the service role key, which bypasses row-level security).
+
+<Note>
+  Sessions are stored in your PostgreSQL database via `connect-pg-simple`. The `session` table is created automatically by the Node.js service on first start.
+</Note>
+
+## Health checks
+
+Use these endpoints to verify that your deployments are healthy:
+
+| Endpoint | Service | Response |
+|----------|---------|----------|
+| `GET /health` | Python AI service (direct) | `{"status": "online", "service": "Kairo AI Engine", "version": "2.3.0", ...}` |
+| `GET /api/ai/health` | Python AI service (via Node.js proxy) | Same response, proxied through Node.js |
+
+Railway uses `GET /health` on the Python service as its health check probe.

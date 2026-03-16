@@ -1,0 +1,141 @@
+---
+title: 'Generate focus cards'
+description: 'Generate six prioritized focus cards highlighting where a coder needs the most improvement.'
+---
+
+Generates exactly six study cards personalized to the coder's soft skills profile and module topics, distributed across three priority levels: 2 high, 2 medium, and 2 low.
+
+<Info>
+  This is an **internal endpoint** called by the Node.js backend when a coder requests a new plan. It is not intended to be called directly from the frontend.
+</Info>
+
+**Base URL:** `http://localhost:8000`
+
+---
+
+## Generate focus cards
+
+```
+POST /generate-focus-cards
+```
+
+Fetches the coder's soft skills and module topics from the database, builds a prompt, and calls Groq LLM to produce six actionable study cards. High-priority cards directly target `struggling_topics`.
+
+### Request body
+
+<ParamField body="coder_id" type="integer" required>
+  Database ID of the coder.
+</ParamField>
+
+<ParamField body="module_id" type="integer" required>
+  ID of the current module. Used to load topics for the cards.
+</ParamField>
+
+<ParamField body="struggling_topics" type="string[]">
+  Topics the coder is struggling with. High-priority cards will target these topics. Defaults to `[]`.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">
+  `true` on successful generation.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container object holding the generated cards.
+  <Expandable title="properties">
+    <ResponseField name="cards" type="object[]">
+      Array of exactly 6 focus card objects.
+      <Expandable title="card properties">
+        <ResponseField name="priority" type="string">Priority level: `high`, `medium`, or `low`. Distribution is always 2–2–2.</ResponseField>
+        <ResponseField name="topic" type="string">Exact module topic this card addresses.</ResponseField>
+        <ResponseField name="title" type="string">Actionable card title.</ResponseField>
+        <ResponseField name="theory" type="string">3–4 sentence explanation adapted to the coder's learning style.</ResponseField>
+        <ResponseField name="practice" type="object">
+          Hands-on practice task.
+          <Expandable title="properties">
+            <ResponseField name="description" type="string">What the coder should do in approximately 20 minutes.</ResponseField>
+            <ResponseField name="example" type="string">Code snippet or concrete steps to get started.</ResponseField>
+          </Expandable>
+        </ResponseField>
+        <ResponseField name="pro_tips" type="string[]">Array of two concrete tips for the topic.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `500`  | LLM returned invalid JSON. |
+| `500`  | Groq API call failed. |
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/generate-focus-cards \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "coder_id": 42,
+    "module_id": 4,
+    "struggling_topics": ["SQL JOINs", "normalization"]
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/generate-focus-cards",
+    json={
+        "coder_id": 42,
+        "module_id": 4,
+        "struggling_topics": ["SQL JOINs", "normalization"],
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "data": {
+    "cards": [
+      {
+        "priority": "high",
+        "topic": "SQL JOINs",
+        "title": "Domina INNER JOIN en 20 minutos",
+        "theory": "INNER JOIN combina filas de dos tablas cuando la condición ON se cumple. Es la operación más común en SQL relacional. Entender su funcionamiento es clave antes de pasar a LEFT o RIGHT JOIN.",
+        "practice": {
+          "description": "Escribe 3 consultas con INNER JOIN sobre las tablas employees y departments.",
+          "example": "SELECT e.name, d.name\nFROM employees e\nINNER JOIN departments d ON e.department_id = d.id;"
+        },
+        "pro_tips": [
+          "Usa alias de tabla para abreviar consultas largas.",
+          "Verifica que la columna de unión exista en ambas tablas antes de ejecutar."
+        ]
+      },
+      {
+        "priority": "high",
+        "topic": "normalization",
+        "title": "Aplica 1NF y 2NF a un esquema real",
+        "theory": "La normalización elimina redundancia y dependencias parciales. 1NF exige valores atómicos; 2NF elimina dependencias parciales de la clave primaria. Aplicarlas reduce errores de integridad.",
+        "practice": {
+          "description": "Toma el esquema de ejemplo y llévalo de 1NF a 2NF.",
+          "example": "-- Tabla sin normalizar\nCREATE TABLE orders (order_id, product_id, product_name, ...)"
+        },
+        "pro_tips": [
+          "Dibuja el diagrama ER antes de escribir SQL.",
+          "Identifica todas las dependencias funcionales primero."
+        ]
+      }
+    ]
+  }
+}
+```

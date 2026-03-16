@@ -1,122 +1,114 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Kairo",
+  "theme": "almond",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#6366F1",
+    "light": "#EEF2FF",
+    "dark": "#312E81"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/cesarrios25/kairo"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cesarrios25/kairo"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
+            "pages": ["introduction", "architecture"]
+          },
+          {
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "getting-started/quickstart",
+              "getting-started/environment-setup",
+              "getting-started/database-setup"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/ai-learning-plans",
+              "features/soft-skills-assessment",
+              "features/coder-dashboard",
+              "features/tl-dashboard",
+              "features/ai-chat",
+              "features/risk-detection"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "User Roles",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "roles/coder",
+              "roles/team-leader"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Deployment",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "deployment/overview",
+              "deployment/node-backend",
+              "deployment/python-ai-service",
+              "deployment/frontend"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Authentication",
             "pages": [
-              "api-reference/introduction"
+              "api/auth/register",
+              "api/auth/login",
+              "api/auth/social-auth",
+              "api/auth/otp-verification"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Coder API",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/coder/dashboard",
+              "api/coder/learning-plans",
+              "api/coder/exercises",
+              "api/coder/resources",
+              "api/coder/activities"
+            ]
+          },
+          {
+            "group": "Team Leader API",
+            "pages": [
+              "api/tl/dashboard",
+              "api/tl/feedback",
+              "api/tl/submissions",
+              "api/tl/resources",
+              "api/tl/ranking"
+            ]
+          },
+          {
+            "group": "AI Service",
+            "pages": [
+              "api/ai/generate-plan",
+              "api/ai/focus-cards",
+              "api/ai/chat",
+              "api/ai/reports",
+              "api/ai/exercises",
+              "api/ai/search-resources"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

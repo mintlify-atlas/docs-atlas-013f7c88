@@ -1,0 +1,128 @@
+---
+title: "Deploying the frontend"
+description: "Serve the Kairo frontend as a static multi-page application."
+---
+
+The Kairo frontend is a static multi-page application (MPA) built with Vanilla JS and Bootstrap 5. There is no build step — you deploy the files as-is to any static hosting provider.
+
+## File structure
+
+```
+frontend/
+├── index.html                  # Landing page
+├── CNAME                       # GitHub Pages custom domain
+└── src/
+    └── views/
+        ├── auth/
+        │   ├── login.html
+        │   ├── register.html
+        │   └── email-validation.html
+        ├── coder/
+        │   ├── dashboard.html
+        │   ├── assignment.html
+        │   ├── IAtrainer.html
+        │   ├── onboarding.html
+        │   └── profile.html
+        └── tl/
+            ├── dashboard.html
+            ├── group.html
+            ├── assignment.html
+            └── profile.html
+```
+
+<Note>
+  A `CNAME` file is included in the `frontend/` directory for GitHub Pages custom domain support. If you are not using a custom domain, you can leave it as-is or delete it.
+</Note>
+
+## Deployment options
+
+<CardGroup cols={3}>
+  <Card title="GitHub Pages" icon="github">
+    Free static hosting directly from your GitHub repository. Supports custom domains via the `CNAME` file.
+  </Card>
+  <Card title="Vercel" icon="triangle">
+    Zero-config static deployment. Point to the `frontend/` directory and deploy.
+  </Card>
+  <Card title="Netlify" icon="globe">
+    Drag-and-drop or Git-connected deployment. Supports custom domains and HTTPS out of the box.
+  </Card>
+</CardGroup>
+
+## Deploy to GitHub Pages
+
+<Steps>
+  <Step title="Push your code to GitHub">
+    Make sure your `frontend/` directory is committed and pushed to your repository.
+  </Step>
+  <Step title="Enable GitHub Pages">
+    Go to your repository **Settings → Pages**. Under **Source**, select the branch you want to deploy and set the folder to `/frontend` (or `/root` if you want to serve from the repository root).
+  </Step>
+  <Step title="Wait for the deployment">
+    GitHub Pages builds and publishes your site within a few minutes. The URL will follow the pattern `https://your-username.github.io/your-repo-name`.
+  </Step>
+  <Step title="Configure a custom domain (optional)">
+    If you have a custom domain, add it in **Settings → Pages → Custom domain** and update the `CNAME` file in `frontend/` with your domain.
+  </Step>
+</Steps>
+
+## Deploy to Vercel
+
+<Steps>
+  <Step title="Import your repository">
+    In the Vercel dashboard, click **Add New → Project** and import your GitHub repository.
+  </Step>
+  <Step title="Set the root directory">
+    Under **Root Directory**, enter `frontend`. Vercel will serve files from this directory.
+  </Step>
+  <Step title="Deploy">
+    Click **Deploy**. Vercel publishes the static files and gives you a `*.vercel.app` URL.
+  </Step>
+</Steps>
+
+## Deploy to Netlify
+
+<Steps>
+  <Step title="Connect your repository">
+    In the Netlify dashboard, click **Add new site → Import an existing project** and connect your GitHub repository.
+  </Step>
+  <Step title="Set the publish directory">
+    Set **Publish directory** to `frontend`. Leave the **Build command** empty — there is no build step.
+  </Step>
+  <Step title="Deploy">
+    Click **Deploy site**. Netlify publishes the files and gives you a `*.netlify.app` URL.
+  </Step>
+</Steps>
+
+## After deployment: update both backends
+
+<Warning>
+  After deploying the frontend, you must update `FRONTEND_URL` in **both** the Node.js backend and the Python AI service to match the deployed URL exactly, then redeploy both backends. Until you do, the browser will receive CORS errors on every API call.
+</Warning>
+
+1. Note your deployed frontend URL, for example `https://hecrodcode.github.io`.
+2. Set `FRONTEND_URL=https://hecrodcode.github.io` in the Node.js backend environment and redeploy.
+3. Set `FRONTEND_URL=https://hecrodcode.github.io` in the Python AI service environment and redeploy.
+
+The URL must be the **origin only** — no trailing slash, no path.
+
+## Local development
+
+For local development, serve the frontend on port 5500 to match the default `FRONTEND_URL` in both backends.
+
+<CodeGroup>
+
+```bash VS Code Live Server
+# Install the Live Server extension in VS Code,
+# then right-click index.html → Open with Live Server.
+# It starts on port 5500 by default.
+```
+
+```bash npx serve
+npx serve -p 5500 frontend
+```
+
+</CodeGroup>
+
+<Tip>
+  VS Code Live Server is the recommended approach during development. It auto-reloads the browser on file saves and runs on port 5500, which matches the default `FRONTEND_URL=http://127.0.0.1:5500/frontend` in `backend-node/.env`.
+</Tip>

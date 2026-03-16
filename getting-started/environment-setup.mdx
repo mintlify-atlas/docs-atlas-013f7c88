@@ -1,0 +1,160 @@
+---
+title: "Environment setup"
+description: "Configure environment variables for all three Kairo services."
+---
+
+Kairo's two backends each require a `.env` file in their root directory. Neither file should ever be committed to version control — both contain secrets.
+
+<Tip>
+Add `backend-node/.env` and `backend-python/.env` to your `.gitignore` before your first commit.
+</Tip>
+
+## Node.js backend (`backend-node/.env`)
+
+This file controls database connectivity, session security, OAuth providers, email delivery, and inter-service communication.
+
+### Server
+
+| Variable | Example | Description |
+|---|---|---|
+| `PORT` | `3000` | Port the Express server listens on. The frontend and Python service expect Node.js at this port. |
+| `NODE_ENV` | `development` | Set to `production` to enable secure cookies, restrict CORS to `FRONTEND_URL`, and suppress detailed error messages. |
+
+### Security and sessions
+
+<Warning>
+`SESSION_SECRET` signs the session cookie. Use a long, random string. If this value is exposed or changed after deployment, all existing sessions are invalidated.
+</Warning>
+
+| Variable | Example | Description |
+|---|---|---|
+| `SESSION_SECRET` | `a3f8...` | Secret used to sign the `riwi.sid` session cookie. Use at least 32 random characters. |
+
+### Database (PostgreSQL — Supabase)
+
+| Variable | Example | Description |
+|---|---|---|
+| `DB_HOST` | `db.xxxx.supabase.co` | PostgreSQL host from your Supabase project settings. |
+| `DB_PORT` | `5432` | PostgreSQL port. Supabase uses `5432` by default. |
+| `DB_NAME` | `postgres` | Database name. Supabase projects use `postgres` as the default name. |
+| `DB_USER` | `postgres.your_user` | Database user. In Supabase, this follows the format `postgres.<project-ref>`. |
+| `DB_PASSWORD` | `your_password` | Database password set when you created the Supabase project. |
+| `DATABASE_URL` | `postgresql://postgres.xxx:password@host:5432/postgres` | Full connection string used by `connect-pg-simple` for the session store. |
+
+### Supabase client
+
+| Variable | Example | Description |
+|---|---|---|
+| `SUPABASE_URL` | `https://xxxx.supabase.co` | Your Supabase project URL, found in **Project Settings → API**. |
+| `SUPABASE_ANON_KEY` | `eyJ...` | Public anon key from **Project Settings → API**. This key is subject to your Row Level Security policies. |
+
+### Frontend connection
+
+<Warning>
+`FRONTEND_URL` must exactly match the origin where the frontend is hosted — including protocol and port. A mismatch causes all browser requests to be blocked by CORS.
+</Warning>
+
+| Variable | Example | Description |
+|---|---|---|
+| `FRONTEND_URL` | `http://127.0.0.1:5500/frontend` | The origin (and path prefix) from which the frontend makes requests. In production, use your full deployment URL, e.g. `https://your-org.github.io`. |
+
+### Python AI service
+
+| Variable | Example | Description |
+|---|---|---|
+| `PYTHON_API_URL` | `http://localhost:8000` | Internal base URL of the Python FastAPI service. Node.js appends endpoint paths to this value when proxying AI requests. In production, replace with the deployed Python service URL. |
+
+### OAuth — GitHub
+
+| Variable | Example | Description |
+|---|---|---|
+| `GITHUB_CLIENT_ID` | `Ov23...` | OAuth App client ID from **GitHub → Settings → Developer settings → OAuth Apps**. |
+| `GITHUB_CLIENT_SECRET` | `your_client_secret` | OAuth App client secret. Treat this like a password. |
+
+### OAuth — Google
+
+| Variable | Example | Description |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | `123456...apps.googleusercontent.com` | OAuth 2.0 client ID from **Google Cloud Console → APIs & Services → Credentials**. |
+| `GOOGLE_CLIENT_SECRET` | `GOCSPX-...` | OAuth 2.0 client secret. |
+
+### SMTP (email / OTP)
+
+<Warning>
+`SMTP_PASS` should be an app-specific password, not your primary account password. For Gmail, generate one at **myaccount.google.com → Security → App passwords**.
+</Warning>
+
+| Variable | Example | Description |
+|---|---|---|
+| `SMTP_HOST` | `smtp.gmail.com` | SMTP server hostname for sending OTP and notification emails. |
+| `SMTP_PORT` | `465` | SMTP port. Port `465` uses implicit TLS; port `587` uses STARTTLS. |
+| `SMTP_SECURE` | `true` | Set to `true` when using port 465 (implicit TLS). Set to `false` for port 587. |
+| `SMTP_USER` | `you@gmail.com` | Email address used to authenticate with the SMTP server. |
+| `SMTP_PASS` | `abcd efgh ijkl mnop` | App password for the SMTP account. |
+| `SMTP_FROM` | `"Kairo <you@gmail.com>"` | Display name and address shown in the `From` field of outgoing emails. |
+
+### AI access control
+
+| Variable | Example | Description |
+|---|---|---|
+| `RIWI_IA_KEY` | `riwi_...` | Internal API key that Node.js uses when calling the Python AI service. The Python service validates this key on incoming requests from Node.js. |
+
+---
+
+## Python AI service (`backend-python/.env`)
+
+This file configures the FastAPI service, LLM connection, and its own Supabase access.
+
+### Service
+
+| Variable | Example | Description |
+|---|---|---|
+| `PORT` | `8000` | Port the Uvicorn server listens on. Node.js expects the Python service at this port via `PYTHON_API_URL`. |
+| `ENV` | `development` | Runtime environment. Logged at startup and used for conditional behavior. |
+
+### LLM
+
+<Warning>
+Despite the variable name `OPENAI_API_KEY`, Kairo uses the **Groq** provider. Set this to your Groq API key from [console.groq.com](https://console.groq.com). The Groq client library is OpenAI-compatible.
+</Warning>
+
+| Variable | Example | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | `gsk_...` | Groq API key used for LLM inference. The variable name is kept as `OPENAI_API_KEY` for compatibility with the LangChain OpenAI adapter. |
+| `MODEL_NAME` | `llama-3.3-70b-versatile` | LLM model ID passed to the Groq API. Also accepts `llama-3.1-8b-instant` for faster, lower-cost responses. The default fallback is `llama-3.3-70b-versatile`. |
+
+### Supabase
+
+| Variable | Example | Description |
+|---|---|---|
+| `SUPABASE_URL` | `https://xxxx.supabase.co` | Same Supabase project URL used by the Node.js backend. |
+| `SUPABASE_SERVICE_KEY` | `eyJ...` | Service role key from **Project Settings → API → service_role**. This key bypasses Row Level Security — keep it private and never expose it to the browser. |
+
+<Warning>
+`SUPABASE_SERVICE_KEY` is the service role key, which bypasses all RLS policies. Never expose this key to the frontend or commit it to a public repository.
+</Warning>
+
+### Internal service URLs
+
+| Variable | Example | Description |
+|---|---|---|
+| `NODE_URL` | `http://localhost:3000` | Base URL of the Node.js API Gateway. Used by the Python service for any callbacks to Node.js. Also added to CORS allowed origins. |
+| `FRONTEND_URL` | `http://localhost:5500` | Frontend origin added to Python's CORS allowed origins. Should match (or be consistent with) the `FRONTEND_URL` set in the Node.js `.env`. |
+
+<Note>
+The Python service builds its CORS origins list at startup from the hardcoded dev origins plus `NODE_URL` and `FRONTEND_URL`. It automatically adds both `http` and `https` variants to cover common misconfiguration scenarios.
+</Note>
+
+---
+
+## Summary checklist
+
+Before starting the stack, verify:
+
+- [ ] `backend-node/.env` exists with all required variables filled in
+- [ ] `backend-python/.env` exists with all required variables filled in
+- [ ] `FRONTEND_URL` in `backend-node/.env` matches the exact URL you use to open the frontend
+- [ ] `PYTHON_API_URL` in `backend-node/.env` points to where the Python service will run
+- [ ] `.env` files are listed in `.gitignore`
+- [ ] `DATABASE_URL` and `SUPABASE_URL` point to the same Supabase project
+- [ ] `SUPABASE_ANON_KEY` (Node.js) and `SUPABASE_SERVICE_KEY` (Python) are from the same project

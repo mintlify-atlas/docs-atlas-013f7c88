@@ -1,0 +1,217 @@
+---
+title: 'Resources'
+description: 'Search and download learning resources provided by Team Leaders.'
+---
+
+Resources are PDF files uploaded by Team Leaders and stored in Supabase Storage. Coders can only access resources belonging to their own clan.
+
+---
+
+## Search resources
+
+```
+POST /api/coder/resources/search
+```
+
+Performs an AI-powered semantic search through the clan's resources. The server first attempts a vector embedding search via the Python AI service (`POST /search-resources`). If the Python service is unavailable, it falls back to PostgreSQL full-text search. As a last resort, it returns any clan resource matching the given module.
+
+Returns signed download URLs (valid for 1 hour) for each result.
+
+### Request body
+
+<ParamField body="topic" type="string" required>
+  Natural language search query (e.g. `"SQL indexes and performance"`).
+</ParamField>
+
+<ParamField body="moduleId" type="integer">
+  Filter results to a specific module ID.
+</ParamField>
+
+<ParamField body="limit" type="integer" default="3">
+  Maximum number of results to return.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="success" type="boolean">`true` even when no results are found.</ResponseField>
+
+<ResponseField name="resources" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Resource database ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title set by the TL.</ResponseField>
+    <ResponseField name="file_name" type="string">Original filename.</ResponseField>
+    <ResponseField name="preview_text" type="string">Extracted text preview from the PDF.</ResponseField>
+    <ResponseField name="storage_path" type="string">Internal Supabase storage path.</ResponseField>
+    <ResponseField name="module_id" type="integer">Associated module ID.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">ISO 8601 upload timestamp.</ResponseField>
+    <ResponseField name="similarity" type="number">Relevance score (0–1). Semantic search returns real scores; fallback returns `0.8` or `0.5`.</ResponseField>
+    <ResponseField name="download_url" type="string | null">Signed Supabase Storage URL valid for 1 hour. `null` if URL generation failed.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+
+<Note>
+  This endpoint never returns a 5xx error to the client — on internal failure it returns `{ "success": true, "resources": [] }`.
+</Note>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:3000/api/coder/resources/search \
+  --header 'Content-Type: application/json' \
+  --header 'Cookie: riwi.sid=<session-cookie>' \
+  --data '{
+    "topic": "SQL indexes and performance",
+    "moduleId": 4,
+    "limit": 3
+  }'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "success": true,
+  "resources": [
+    {
+      "id": 7,
+      "title": "Optimización de consultas SQL",
+      "file_name": "sql-optimization.pdf",
+      "preview_text": "Los índices en PostgreSQL permiten...",
+      "module_id": 4,
+      "uploaded_at": "2026-03-05T08:00:00.000Z",
+      "similarity": 0.92,
+      "download_url": "https://storage.example.com/signed/..."
+    }
+  ]
+}
+```
+
+---
+
+## List all resources
+
+```
+GET /api/coder/resources
+```
+
+Returns all active resources available to the coder's clan, with uploader and module information.
+
+### Query parameters
+
+<ParamField query="moduleId" type="integer">
+  Filter resources by module ID.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="resources" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">Resource database ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="file_name" type="string">Original PDF filename.</ResponseField>
+    <ResponseField name="preview_text" type="string">Text preview extracted from the PDF.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">ISO 8601 upload timestamp.</ResponseField>
+    <ResponseField name="module_id" type="integer">Associated module ID.</ResponseField>
+    <ResponseField name="clan" type="string">Clan this resource belongs to.</ResponseField>
+    <ResponseField name="module_name" type="string">Module name.</ResponseField>
+    <ResponseField name="tl_name" type="string">Full name of the TL who uploaded the resource.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `500`  | Failed to list resources. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url 'http://localhost:3000/api/coder/resources?moduleId=4' \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "resources": [
+    {
+      "id": 7,
+      "title": "Optimización de consultas SQL",
+      "file_name": "sql-optimization.pdf",
+      "preview_text": "Los índices en PostgreSQL permiten...",
+      "uploaded_at": "2026-03-05T08:00:00.000Z",
+      "module_id": 4,
+      "clan": "Turing",
+      "module_name": "Bases de Datos",
+      "tl_name": "Maria Gomez"
+    }
+  ]
+}
+```
+
+---
+
+## Download a resource
+
+```
+GET /api/coder/resource/:id/download
+```
+
+Generates a signed Supabase Storage URL for the specified resource. The URL is valid for 1 hour.
+
+<Warning>
+  Coders can only download resources belonging to their own clan. Requests for resources from other clans return `404`.
+</Warning>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The resource database ID.
+</ParamField>
+
+### Response — 200 OK
+
+<ResponseField name="url" type="string">Signed Supabase Storage URL. Valid for 3600 seconds.</ResponseField>
+<ResponseField name="fileName" type="string">Original filename, suitable for use as a download filename attribute.</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+| ------ | --------- |
+| `401`  | No active session. |
+| `404`  | Resource not found, inactive, or belongs to a different clan. |
+| `500`  | Failed to generate the signed URL. |
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url http://localhost:3000/api/coder/resource/7/download \
+  --header 'Cookie: riwi.sid=<session-cookie>'
+```
+
+</CodeGroup>
+
+```json 200
+{
+  "url": "https://storage.example.com/activity-resources/Turing/module-4/1709123456789_sql-optimization.pdf?token=...",
+  "fileName": "sql-optimization.pdf"
+}
+```

@@ -1,0 +1,258 @@
+---
+title: "Quickstart"
+description: "Get the full Kairo stack running in under 15 minutes."
+---
+
+Kairo requires three processes running simultaneously: the Node.js API Gateway, the Python AI microservice, and the frontend file server. Follow these steps to get everything running locally.
+
+## Prerequisites
+
+Before you start, make sure you have:
+
+- **Node.js 18+** — [nodejs.org](https://nodejs.org)
+- **Python 3.11+** — [python.org](https://python.org)
+- **A Supabase account** with a project created — [supabase.com](https://supabase.com)
+- **Git** — to clone the repository
+- **A Groq API key** — [console.groq.com](https://console.groq.com) (free tier available)
+
+<Steps>
+
+<Step title="Clone the repository">
+
+```bash
+git clone https://github.com/Riwi-Project-C6/Learning-Platform.git
+cd Learning-Platform
+```
+
+</Step>
+
+<Step title="Initialize the database">
+
+Before starting either backend, you need to create the schema in your Supabase project.
+
+1. Open your Supabase project dashboard.
+2. Navigate to **SQL Editor**.
+3. Copy the contents of `database/schema.sql` and run it.
+4. Then run `database/rls_policies.sql` in the same editor.
+
+See [Database setup](/getting-started/database-setup) for the full walkthrough.
+
+</Step>
+
+<Step title="Configure backend-node environment">
+
+Create a `.env` file in the `backend-node/` directory:
+
+```bash
+cp backend-node/.env.example backend-node/.env
+```
+
+If no example file exists, create `backend-node/.env` with these variables:
+
+```env
+# Server
+PORT=3000
+NODE_ENV=development
+
+# Security & sessions
+SESSION_SECRET=your_session_secret
+
+# Database (PostgreSQL — Supabase)
+DB_HOST=your_host
+DB_PORT=5432
+DB_NAME=your_name
+DB_USER=postgres.your_user
+DB_PASSWORD=your_password
+DATABASE_URL=your_database_url
+
+# Supabase
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_anon_key
+
+# Frontend connection
+FRONTEND_URL=http://127.0.0.1:5500/frontend
+
+# Python AI service
+PYTHON_API_URL=http://localhost:8000
+
+# OAuth — GitHub
+GITHUB_CLIENT_ID=your_client
+GITHUB_CLIENT_SECRET=your_client_secret
+
+# OAuth — Google
+GOOGLE_CLIENT_ID=your_client
+GOOGLE_CLIENT_SECRET=your_client_secret
+
+# SMTP (email / OTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your_email
+SMTP_PASS=your_app_password
+SMTP_FROM="Kairo <your_email>"
+
+# API key for AI access control
+RIWI_IA_KEY=your_ia_key
+```
+
+See [Environment setup](/getting-started/environment-setup) for descriptions of every variable.
+
+</Step>
+
+<Step title="Configure backend-python environment">
+
+Create a `.env` file in the `backend-python/` directory:
+
+```env
+# Python service
+PORT=8000
+ENV=development
+
+# LLM
+OPENAI_API_KEY=your_groq_api_key
+MODEL_NAME=llama-3.3-70b-versatile
+
+# Supabase (service role — bypasses RLS)
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_KEY=your_service_key
+
+# Internal service URLs
+NODE_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5500
+```
+
+<Note>
+The Python service uses `OPENAI_API_KEY` as the variable name but the value should be your Groq API key. The Groq client library is OpenAI-compatible.
+</Note>
+
+</Step>
+
+<Step title="Start the Node.js backend">
+
+Open a terminal and run:
+
+```bash
+cd backend-node
+npm install
+npm run dev
+```
+
+Wait for this confirmation in the terminal:
+
+```
+------------------------------------------------------------
+🚀 KAIRO API GATEWAY STARTED SUCCESSFULLY
+------------------------------------------------------------
+📡 URL      : http://localhost:3000
+```
+
+If startup fails, check that your `DATABASE_URL` is correct and the Supabase project is reachable.
+
+</Step>
+
+<Step title="Start the Python AI service">
+
+Open a second terminal and run the commands for your operating system:
+
+<CodeGroup>
+
+```bash Linux
+cd backend-python
+python3 -m venv env
+source env/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+```bash macOS
+cd backend-python
+python3 -m venv env
+source env/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+```powershell Windows
+cd backend-python
+python -m venv env
+env\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+</CodeGroup>
+
+Look for these confirmation lines in the terminal:
+
+```
+INFO:     Supabase client initialized
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+The service also logs the allowed CORS origins and loaded LLM model at startup.
+
+</Step>
+
+<Step title="Open the frontend">
+
+Open a third terminal and serve the frontend directory:
+
+<CodeGroup>
+
+```bash VS Code Live Server
+# Open the project in VS Code and click "Go Live" in the bottom bar.
+# Live Server defaults to port 5500.
+```
+
+```bash npx serve
+cd frontend
+npx serve -p 5500
+```
+
+```bash Python HTTP server
+cd frontend
+python3 -m http.server 5500
+```
+
+</CodeGroup>
+
+Then open your browser to:
+
+```
+http://127.0.0.1:5500/frontend
+```
+
+<Warning>
+The frontend URL must exactly match the `FRONTEND_URL` value you set in `backend-node/.env`. If you use `localhost` in one place and `127.0.0.1` in another, the browser will receive CORS errors.
+</Warning>
+
+</Step>
+
+</Steps>
+
+## Verifying the stack
+
+With all three processes running, confirm everything is connected:
+
+| Check | URL | Expected response |
+|---|---|---|
+| Node.js health | `http://localhost:3000/api/health` | `{"status":"active", ...}` |
+| Python health | `http://localhost:8000/health` | `{"status":"online", ...}` |
+| Python API docs | `http://localhost:8000/docs` | FastAPI Swagger UI |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Environment setup" icon="gear" href="/getting-started/environment-setup">
+    Full reference for every environment variable in all three services
+  </Card>
+  <Card title="Database setup" icon="database" href="/getting-started/database-setup">
+    Detailed walkthrough for initializing the Supabase schema
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how the Node.js and Python services communicate
+  </Card>
+  <Card title="Coder guide" icon="graduation-cap" href="/roles/coder">
+    What coders see and how the learning plan flow works
+  </Card>
+</CardGroup>
