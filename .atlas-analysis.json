@@ -1,0 +1,128 @@
+{
+  "projectType": "saas",
+  "projectName": "Kairo",
+  "projectDescription": "An AI-powered personalized learning platform that generates adaptive 4-week study plans for bootcamp students and provides Team Leaders with analytics dashboards to identify at-risk coders.",
+  "theme": "almond",
+  "primaryColor": "#6366F1",
+  "lightColor": "#EEF2FF",
+  "darkColor": "#312E81",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["introduction", "architecture"]
+          },
+          {
+            "group": "Getting Started",
+            "pages": ["getting-started/quickstart", "getting-started/environment-setup", "getting-started/database-setup"]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/ai-learning-plans",
+              "features/soft-skills-assessment",
+              "features/coder-dashboard",
+              "features/tl-dashboard",
+              "features/ai-chat",
+              "features/risk-detection"
+            ]
+          },
+          {
+            "group": "User Roles",
+            "pages": [
+              "roles/coder",
+              "roles/team-leader"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/node-backend",
+              "deployment/python-ai-service",
+              "deployment/frontend"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/register",
+              "api/auth/login",
+              "api/auth/social-auth",
+              "api/auth/otp-verification"
+            ]
+          },
+          {
+            "group": "Coder API",
+            "pages": [
+              "api/coder/dashboard",
+              "api/coder/learning-plans",
+              "api/coder/exercises",
+              "api/coder/resources",
+              "api/coder/activities"
+            ]
+          },
+          {
+            "group": "Team Leader API",
+            "pages": [
+              "api/tl/dashboard",
+              "api/tl/feedback",
+              "api/tl/submissions",
+              "api/tl/resources",
+              "api/tl/ranking"
+            ]
+          },
+          {
+            "group": "AI Service",
+            "pages": [
+              "api/ai/generate-plan",
+              "api/ai/focus-cards",
+              "api/ai/chat",
+              "api/ai/reports",
+              "api/ai/exercises",
+              "api/ai/search-resources"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-generated personalized 4-week learning plans based on Moodle progress and soft skills assessments",
+    "Adaptive focus cards prioritizing topics where coders struggle most",
+    "AI-powered interactive chat tutor for on-demand learning assistance",
+    "Team Leader analytics dashboard with risk detection for at-risk students",
+    "Soft skills assessment integration (autonomy, time management, communication)",
+    "Hybrid architecture with Node.js orchestrator and Python/FastAPI AI microservice",
+    "OAuth authentication via GitHub and Google with email OTP verification",
+    "Evidence submission system for completed learning activities"
+  ],
+  "publicApiSurface": [
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "POST /api/auth/verify-otp",
+    "GET /api/coder/dashboard",
+    "GET /api/coder/plan",
+    "POST /api/coder/plan/request",
+    "POST /api/coder/exercise/generate",
+    "POST /api/coder/resources/search",
+    "GET /api/tl/dashboard",
+    "POST /api/tl/feedback",
+    "GET /api/tl/ranking",
+    "POST /generate-plan",
+    "POST /generate-focus-cards",
+    "POST /chat/ask",
+    "POST /generate-report",
+    "POST /generate-exercise",
+    "POST /search-resources",
+    "GET /health"
+  ]
+}
